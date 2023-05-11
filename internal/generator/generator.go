@@ -18,7 +18,7 @@ import (
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/renderer/html"
 
-	"stalexan/gomarkwiki/internal/util"
+	"github.com/stalexan/gomarkwiki/internal/util"
 )
 
 //go:embed static/style.css

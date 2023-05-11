@@ -1,4 +1,4 @@
-module stalexan/gomarkwiki
+module github.com/stalexan/gomarkwiki
 
 go 1.20
 

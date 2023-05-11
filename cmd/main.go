@@ -7,8 +7,8 @@ import (
 	"runtime"
 	"runtime/pprof"
 
-	"stalexan/gomarkwiki/internal/generator"
-	"stalexan/gomarkwiki/internal/util"
+	"github.com/stalexan/gomarkwiki/internal/generator"
+	"github.com/stalexan/gomarkwiki/internal/util"
 )
 
 // version holds the gomarkwiki version, and is set at build time.

@@ -1,0 +1,18 @@
+# Image name
+IMAGE=gomarkwiki/builder
+
+function errMessage() {
+    MESSAGE="ERROR: $1"
+    printf "$MESSAGE\n"
+} >&2
+
+function errExit() {
+    errMessage "$1"
+    exit 1
+}
+
+function printUsageAndExit() {
+    echo "USAGE: $USAGE"
+    exit 1
+} >&2
+

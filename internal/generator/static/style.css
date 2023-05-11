@@ -1,0 +1,116 @@
+/* Default font */
+body {
+  font-family: sans-serif;
+}
+
+/* Body */
+body {
+  padding: 0.5em;
+  margin: 0;
+}
+
+/* Headers */
+h1,h2,h3,h4 { 
+  margin: 3px 0px 3px 0px;
+  padding: 2px 0px 1px 5px;
+  font-size: 100%;
+  font-weight: normal;
+
+  /* Light blue */
+  /* #color: black;
+  #background: #ccccff; */
+
+  /* Pale green */
+  /* #color: black;
+  #background: #98fb98; */
+
+  /* Light blue */
+  /* #color: black;
+  #background: #ccccff; */
+
+  /* Amber */
+  color: black;
+  /* background: #ffaa00; */
+  background: #ffbf00;
+}
+
+/* Paragraphs */
+p {
+  margin: 0.7em 0 0.7em 0.25em;
+}
+
+/* Lists */
+body > ul { /* Left-align top-level lists */
+  margin: 0px 0px 0px -20px; 
+}
+p + ul { /* Except when they follow a paragraph */
+  margin: initial;
+}
+
+/* Code */
+pre {
+  border: 1px solid #ddd;
+  box-shadow: 4px 4px 4px #ddd;
+  margin-left: 4em;
+  margin-right: 4em;
+  padding: 0.2em 0.6em 0.3em 0.6em;
+  overflow-x: auto;
+  font-family: "Lucida Console", Monaco, monospace;
+  font-size: 90%;
+}
+code {
+  font-family: "Lucida Console", Monaco, monospace;
+  font-size: 90%;
+}
+:not(pre) > code { /* For inline code */
+  padding: 1px 3px;
+  background: #ddd;
+}
+
+/* Blockquotes */
+blockquote {
+  background: #eee;
+  border-left: 5px solid #aaa;
+  margin-top: 4px;
+  margin-bottom: 4px;
+  padding: 1px 0.6em;
+}
+
+/* Images and videos */
+img, iframe, video { 
+    max-width: 100%;
+    display: block; /* On its own line */
+    padding: 0.5em 0em 0.4em 3em;
+}
+
+/* Tables */
+table {
+  margin-left: 2em;
+  margin-right: 2em;
+}
+ul + table { margin-top: 1em; }
+ol + table { margin-top: 1em; }
+li table { 
+    margin-top: 0.5em; 
+    margin-bottom: 0.5em; 
+}
+th, td { padding: 1px 5px 0px 5px; }
+thead, tfoot { background: #ccc; }
+tr:nth-child(even) { background: #ddd; }
+
+/* Highlighting */
+.hilight { /* "maize" yellow (to mark important links) */
+    background: #fbec5d;
+}
+.hilight-light { /* lighter  yellow (for long quotes) */
+    background: #fcffa4;
+}
+.hilight2 { /* light green */
+    background: LightGreen;
+    padding: 0px 3px 0px 2px;
+}
+.hilight-red-text {
+    color: #ff0000; 
+    font-weight: bold;
+}
+

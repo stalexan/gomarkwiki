@@ -18,15 +18,15 @@ RUN set -eux; \
 # Install Go.
 RUN set -eux; \
     GO_URL="https://dl.google.com/go/go${GO_VERSION}.linux-amd64.tar.gz"; \
-	wget -O go.tar.gz.asc "${GO_URL}.asc"; \
-	wget -O go.tar.gz "$GO_URL" --progress=dot:giga; \
+    wget -O go.tar.gz.asc "${GO_URL}.asc"; \
+    wget -O go.tar.gz "$GO_URL" --progress=dot:giga; \
     GNUPGHOME="$(mktemp -d)"; export GNUPGHOME; \
-	gpg --batch --keyserver keyserver.ubuntu.com --recv-keys 'EB4C 1BFD 4F04 2F6D DDCC  EC91 7721 F63B D38B 4796'; \
-	gpg --batch --verify go.tar.gz.asc go.tar.gz; \
-	gpgconf --kill all; \
-	rm -rf "$GNUPGHOME" go.tgz.asc; \
-	tar -C /usr/local -xzf go.tar.gz; \
-	rm go.tar.gz;
+    gpg --batch --keyserver keyserver.ubuntu.com --recv-keys 'EB4C 1BFD 4F04 2F6D DDCC  EC91 7721 F63B D38B 4796'; \
+    gpg --batch --verify go.tar.gz.asc go.tar.gz; \
+    gpgconf --kill all; \
+    rm -rf "$GNUPGHOME" go.tgz.asc; \
+    tar -C /usr/local -xzf go.tar.gz; \
+    rm go.tar.gz;
 
 ENV \
     # Add go and local binaries to PATH.

@@ -40,11 +40,8 @@ p {
 }
 
 /* Lists */
-body > ul { /* Left-align top-level lists */
+body > ul:not(p + ul) { /* Left-align top-level lists except when they follow a paragraph. */
   margin: 0px 0px 0px -20px; 
-}
-p + ul { /* Except when they follow a paragraph */
-  margin: initial;
 }
 
 /* Code */

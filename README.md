@@ -92,7 +92,7 @@ a prebuilt binary.
 ## From Source
 
 Gomarkwiki is written in the Go programming language and you need at least Go
-version 1.20. To build gomarkwik from source, execute the following steps:
+version 1.20. To build gomarkwiki from source, execute the following steps:
 
 ```
 $ git clone https://github.com/stalexan/gomarkwiki
@@ -108,7 +108,7 @@ This builds gomarkwiki and places the executable in the `./build` directory.
 ## Binaries
 
 You can download the latest stable release versions of gomarkwiki from the
-[gomarkwiki release page](https://github.com/stalexan/gomarkwiki/releases/latest).
+[gomarkwiki releases page](https://github.com/stalexan/gomarkwiki/releases/latest).
 These builds are considered stable and releases are made regularly in
 a controlled manner.
 

@@ -10,8 +10,8 @@ Gomarkwiki is written in Go using the
 supports CommonMark 0.30.
 
 Here's a sample site generated with Gomarkwiki:
-[gomarkwiki-example](https://www.alexan.org/gomarkwiki-sample-site/). The
-Markdown used to create this is in the
+[Example](https://www.alexan.org/gomarkwiki-example/Gomarkwiki%20Example.html).
+The Markdown used to create this is in the
 [example-site](https://github.com/stalexan/gomarkwiki/tree/main/example-site)
 directory. This site is just a few pages from a wiki I keep about software
 development. The pages aren't meant for public use, but give a good idea of

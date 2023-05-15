@@ -9,7 +9,7 @@ Gomarkwiki is written in Go using the
 [goldmark](https://github.com/yuin/goldmark) parser, and so is very fast, and
 supports CommonMark 0.30.
 
-Here's a sample site generated with Gomarkwiki:
+Here's a example site generated with Gomarkwiki:
 [Example](https://www.alexan.org/gomarkwiki-example/Gomarkwiki%20Example.html).
 The Markdown used to create this is in the
 [example-site](https://github.com/stalexan/gomarkwiki/tree/main/example-site)

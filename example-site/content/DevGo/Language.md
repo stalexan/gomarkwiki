@@ -46,11 +46,11 @@ var a, b     = 10, "hello"
 <pre><code>var x = 10
 x := 10
 </code></pre>
-* Be careful with `:=`, though. It will cuase a variable to be shadowed if that
+* Be careful with `:=`, though. It will cause a variable to be shadowed if that
   variable is defined in an outer block, and won't use the existing variable. (LGO p107)
 * The __shadow linter__ can be used to detect unexpected shadowing. (LGO p110)
 
-# `const`
+# const
 * go.dev/ref/spec [Constant declarations](https://go.dev/ref/spec#Constant_declarations)
 * Consts in Go just give names to literals. A variable itself cannot be declared const.
 * Consts do not need to be typed. Types only come into effect when assigning values.
@@ -65,7 +65,7 @@ var d tye = x
 * go.dev/ref/spec [Array types](https://go.dev/ref/spec#Array_types)
 * Are rarely used directly, unless you know the exact size you need ahead of time.
   They're mainly used as the backing store for slices.
-* Definining an array:
+* Defining an array:
 <pre><code>// With zero values
 var x [3]int
 
@@ -93,8 +93,8 @@ fmt.Println(x == y) // prints true
 * Slices are declared similarly to arrays, but no size is specified:
 <pre><code>var x = []int{10, 20, 30}
 </code></pre>
-* The `==` and `!=` operators can't be used to complare slices, although can be used
-  to check wether a slice is `nil`.
+* The `==` and `!=` operators can't be used to compare slices, although can be used
+  to check whether a slice is `nil`.
 <pre><code>var x []int
 fmt.Println(x == nil) // prints true
 </code></pre>
@@ -217,7 +217,7 @@ delete(m, "hello")
   * `if`, `for`, and `switch` statements each define a block.
   * Each clause in a `switch` and `select` statement define a block.
 
-# `if` Statements
+# If Statements
 * go.dev/ref/spec [If statements](https://go.dev/ref/spec#If_statements)
 * Effective Go [If](https://go.dev/doc/effective_go#if)
 * An `if` statement can define variables that exist for the the condition and
@@ -234,7 +234,7 @@ delete(m, "hello")
 //fmt.Println(n) // Would cause a syntax error.
 </code></pre>
 
-# `for` Statements
+# For Statements
 * go.dev/ref/spec [For statements](https://go.dev/ref/spec#For_statements)
 * Effective Go [For](https://go.dev/doc/effective_go#for)
 * `for` is the only looping construct in Go.
@@ -251,7 +251,7 @@ for i := 0; i < 10; i++ {
     fmt.Println(i)
 }
 
-// The <b>conditon-only for</b> (like a while loop).
+// The <b>condition-only for</b> (like a while loop).
 i := 1
 for i < 100 {
     fmt.Println(i)
@@ -270,7 +270,7 @@ for i, v := range evenVals {
 }
 </code></pre>
 
-# `switch` Statements
+# Switch Statements
 * go.dev/ref/spec [Switch statements](https://go.dev/ref/spec#Switch_statements)
 * Effective Go [Switch](https://go.dev/doc/effective_go#switch)
 * Example:
@@ -384,7 +384,7 @@ func main() {
 // 10 -20
 </code></pre>
 
-# Pointers, `new`, and `make`
+# Pointers, new, and make
 * go.dev/ref/spec [Pointer types](https://go.dev/ref/spec#Pointer_types)
 * Effective Go [Pointers vs. Values](https://go.dev/doc/effective_go#pointers_vs_values)
 * pkg.go.dev [new()](https://pkg.go.dev/builtin#new): Allocates memory for
@@ -419,7 +419,7 @@ p.X = 1234
 </code></pre>
 * A reference to local struct can be returned from a function. Go will place it
   on the heap, and the pointer remains valid. Normally it would go on the
-  stack, for better performance since heap managment takes longer.  This is
+  stack, for better performance since heap management takes longer.  This is
   done with what's called "__escape analysis__", to determine whether pointers
   can use memory on the stack versus heap, for better performance.  The same
   applies to data that might normally go on the heap. The Go compiler will put
@@ -454,7 +454,7 @@ var fred person
 fmt.Println(fred) // prints "{ 0 }"
 
 // Create a zero value instance using a <b>struct literal</b>. This has the
-// same effect as the previous decleartion for fred.
+// same effect as the previous declaration for fred.
 bob := person{}
 
 // Define a nonempty struct using a comma-separated list of values.
@@ -801,7 +801,7 @@ func (me MyErr) Error() string {
 * A __panic__ causes the stack to unwind and any `defer` code to be run at each
   level in the stack. When `main()` is reached, a stack trace is printed and
   the program exits.
-* Call [panic()](https://pkg.go.dev/builtin#panic) to generate a panic programatically.
+* Call [panic()](https://pkg.go.dev/builtin#panic) to generate a panic programmatically.
 * Call [recover()](https://pkg.go.dev/builtin#recover) to recover from a panic. This must
   be done from within a `defer` function, since only `defer` functions are run once a panic happens.
 <pre><code>func div60(i int) {

@@ -1,21 +1,22 @@
 # Introduction
 
-Gomarkwiki is a command-line program that generates HTML from Markdown, and is
-a fast and simple way to generate static websites. I use it for keeping notes,
-in personal wikis. I was using [ikiwiki](https://ikiwiki.info/), but wanted
-something that was faster, and supported more modern syntax, including
-[CommonMark](https://en.wikipedia.org/wiki/Markdown#Standardization).
-Gomarkwiki is written in Go using the
-[goldmark](https://github.com/yuin/goldmark) parser, and so is very fast, and
-supports CommonMark 0.30.
+Gomarkwiki is a command-line program that converts Markdown to HTML, providing
+a fast and straightforward method for generating static websites. It serves as a 
+useful tool for maintaining personal wikis and note-taking. I was using 
+[ikiwiki](https://ikiwiki.info/), but wanted a faster alternative that supports 
+more modern syntax, such as [CommonMark](https://en.wikipedia.org/wiki/Markdown#Standardization) and
+[GFM](https://github.github.com/gfm) tables. Developed in Go with 
+the [Goldmark](https://github.com/yuin/goldmark) parser, Gomarkwiki ensures exceptional
+speed, complete support for CommonMark 0.30,
+and support for GFM extensions such as tables.
 
 Here's a example site generated with Gomarkwiki:
 [Example](https://www.alexan.org/gomarkwiki-example/Gomarkwiki%20Example.html).
+This site is a few pages from personal wikis I keep. The pages aren't meant for
+public consumption, but give a good idea of what Gomarkwiki can do.
 The Markdown used to create this is in the
 [example-site](https://github.com/stalexan/gomarkwiki/tree/main/example-site)
-directory. This site is just a few pages from a wiki I keep about software
-development. The pages aren't meant for public use, but give a good idea of
-what Gomarkwiki does.
+directory.
 
 # Usage
 

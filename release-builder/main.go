@@ -16,6 +16,12 @@ const EXTRACTED_SOURCE_DIR = "/output/source"
 
 var versionRegex = regexp.MustCompile(`^v\d+\.\d+\.\d+`)
 
+var exeTimestamp time.Time
+
+func init() {
+	exeTimestamp = time.Date(2023, 05, 20, 0, 0, 0, 0, time.UTC)
+}
+
 func formatMessage(format string, args []interface{}) string {
 	message := fmt.Sprintf(format, args...)
 	if !strings.HasSuffix(message, "\n") {
@@ -81,6 +87,12 @@ func readdir(dir string) []string {
 func chmod(file string, mode os.FileMode) {
 	if err := os.Chmod(file, mode); err != nil {
 		printErrorAndExit("Failed to chmod %v to %s: %v", file, mode, err)
+	}
+}
+
+func touch(file string, time time.Time) {
+	if err := os.Chtimes(file, time, time); err != nil {
+		printErrorAndExit("Unable to update timestamps for %v: %v", file, err)
 	}
 }
 
@@ -221,6 +233,9 @@ func compress(goos, binaryFilename string) {
 	var command *exec.Cmd
 	switch goos {
 	case "windows":
+		// Make SHA256 sum for zip file the same from build to build. Fixes Issue #1.
+		touch(filepath.Join(OUTPUT_DIR, binaryFilename), exeTimestamp)
+
 		outputFile := strings.TrimSuffix(binaryFilename, ".exe") + ".zip"
 		command = exec.Command("zip", "-q", "-X", outputFile, binaryFilename)
 	default:

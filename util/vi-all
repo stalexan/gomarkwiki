@@ -1,0 +1,10 @@
+#!/bin/bash
+
+FILES_ALL="*/*.go */*/*.go */Dockerfile */*.sh"
+#FILES_CUR="./internal/generator/*.go"
+FILES_CUR="./release-builder/Dockerfile ./release-builder/*.sh ./release-builder/main.go"
+
+#FILES="$FILES_ALL"
+FILES="$FILES_CUR"
+
+vi -p $FILES

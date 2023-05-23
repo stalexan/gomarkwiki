@@ -136,7 +136,11 @@ The binaries released with each gomarkwiki version are
 [reproducible](https://reproducible-builds.org/), which means that you can
 reproduce a byte identical version from the source code for that release.
 
-To do a reproducible build, first determine which version of Go was used to
+Reproducible builds can be done with either Docker using the release build
+scripts found in the [release-builder](https://github.com/stalexan/gomarkwiki/tree/main/example-site)
+directory, or without Docker by manually doing what the scripts do.
+
+In either case, the first step is to determine which version of Go was used to
 build gomarkwiki, and which version of gomarkwiki to build. This can be done
 with the `--version` option:
 
@@ -145,7 +149,10 @@ $ gomarkwiki --version
 gomarkwiki v0.1.1 compiled with go1.20.4 on linux/amd64
 ```
 
-Next create a Docker image for the build by running `build-image.sh` in the
+## With Docker
+
+To do a reproducible build with Docker, we first create a Docker image by
+running `build-image.sh` in the
 [release-builder](https://github.com/stalexan/gomarkwiki/tree/main/release-builder)
 directory, giving it the version of Go that will be used to do the build. Here
 we create an image that will have Go version 1.20.4:
@@ -163,6 +170,64 @@ binaries that are created in `~/tmp/build-output`:
 ```
 ./build-release.sh ~/gomarkwiki ~/tmp/build-output v0.1.1
 ```
+
+## Without Docker
+
+A reproducible build can also be done manually, without Docker. Here we perform
+the same steps as done in the build scripts, but for just one executable. 
+
+First install the version of Go that was used to build Gomarkwiki. Install
+instructions for Go can be found here: go.dev [Download and install](https://go.dev/doc/install).
+
+Then create a `build` user, so that `GOPATH` can be configured to be the same
+as what's used for the release build. 
+
+```
+$ useradd -m -d /home/build -s /bin/bash build
+```
+
+Also, create the same build directory that's used for a release build:
+
+```
+$ mkdir -p /output/source
+$ chown -R build:build /output/source
+```
+
+Then as the `build` user, configure Go:
+
+```
+$ export PATH=$PATH:/usr/local/go/bin
+$ export GOPATH=$HOME/go
+```
+
+Extract the source to build:
+
+```
+$ cd /output/source
+$ TZ=America/New_York curl -L https://github.com/stalexan/gomarkwiki/releases/download/v0.1.1/gomarkwiki-v0.1.1.tar.gz | tar xz --strip-components=1
+```
+
+Build Gomarkwiki:
+
+```
+$ GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -X 'main.version=v0.1.1'" -o gomarkwiki_v0.1.1_linux_amd64 ./cmd/main.go
+```
+
+Create the zipped version:
+
+```
+$ bzip2 gomarkwiki_v0.1.1_linux_amd64
+```
+
+Compare the SHA256 sums. Here we've downloaded the release's SHA256SUMS file to
+the current directory:
+
+```
+$ sha256sum --ignore-missing --check SHA256SUMS
+gomarkwiki_v0.1.1_linux_amd64.bz2: OK
+```
+
+The SHA256 sums are the same, and we've done a reproducible build.
 
 # License
 

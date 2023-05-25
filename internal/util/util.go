@@ -8,25 +8,30 @@ import (
 
 var Verbose bool
 
+func formatMessage(format string, args []interface{}) string {
+	return fmt.Sprintf(format, args...)
+}
+
 // PrintMessage prints a message to stdout.
-func PrintMessage(message string) {
-	fmt.Println(message)
+func PrintMessage(format string, args ...interface{}) {
+	fmt.Println(formatMessage(format, args))
 }
 
 // PrintMessage prints a message to stdout if the Verbose flag is set.
-func PrintVerboseMessage(message string) {
+func PrintVerboseMessage(format string, args ...interface{}) {
 	if Verbose {
-		fmt.Println(message)
+		fmt.Println(formatMessage(format, args))
 	}
 }
 
 // PrintWarning prints a warning to stderr.
-func PrintWarning(message string) {
-	fmt.Fprintf(os.Stderr, "WARNING: %s\n", message)
+func PrintWarning(format string, args ...interface{}) {
+	fmt.Fprintf(os.Stderr, "WARNING: %s\n", formatMessage(format, args))
 }
 
-// PrintError prints message and error to stderr.
-func PrintError(message string, err error) {
+// PrintFatalError prints a error message to stderr and exits.
+func PrintFatalError(err error, format string, args ...interface{}) {
+	message := formatMessage(format, args)
 	if err != nil {
 		if message != "" {
 			message += ": "
@@ -34,10 +39,6 @@ func PrintError(message string, err error) {
 		message += err.Error()
 	}
 	fmt.Fprintf(os.Stderr, "ERROR: %s\n", message)
-}
 
-// PrintFatalError prints message and error to stderr and exits.
-func PrintFatalError(message string, err error) {
-	PrintError(message, err)
 	os.Exit(1)
 }

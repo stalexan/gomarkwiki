@@ -85,7 +85,7 @@ func GenerateWiki(dirs WikiDirs, regen bool, clean bool, version string) error {
 	}
 
 	// Copy styles.css to destDir.
-	if err = copyStylesCss(dirs.destDir); err != nil {
+	if err = copyStyleCss(dirs.destDir); err != nil {
 		return err
 	}
 	relDestPaths["style.css"] = true
@@ -108,8 +108,8 @@ func generateFromContent(dirs WikiDirs, regen bool, version string) (map[string]
 	}
 
 	// Iterate recursively over the source directory and generate the wiki from the files found.
-	util.PrintVerboseMessage(fmt.Sprintf("Looking for markdown in %s", dirs.contentDir))
-	util.PrintVerboseMessage(fmt.Sprintf("Writing HTML to %s", dirs.destDir))
+	util.PrintVerboseMessage("Looking for markdown in %s", dirs.contentDir)
+	util.PrintVerboseMessage("Writing HTML to %s", dirs.destDir)
 	relDestPaths := map[string]bool{}
 	err := filepath.Walk(dirs.contentDir, func(contentPath string, info fs.FileInfo, err error) error {
 		// Was there an error looking up this file?
@@ -181,9 +181,9 @@ func cleanDestDir(destDir string, relDestPaths map[string]bool) error {
 
 		// Delete this file if it doesn't have a corresponding file in the source dir.
 		if !relDestPaths[relDestPath] {
-			util.PrintVerboseMessage(fmt.Sprintf("Deleting %s", destPath))
+			util.PrintVerboseMessage("Deleting %s", destPath)
 			if err = os.Remove(destPath); err != nil {
-				util.PrintWarning(fmt.Sprintf("Failed to delete %s: %v", destPath, err))
+				util.PrintWarning("Failed to delete %s: %v", destPath, err)
 			}
 		}
 
@@ -227,7 +227,7 @@ func deleteEmptyDirectories(path string) error {
 
 			if isEmpty {
 				// Delete the empty directory.
-				util.PrintVerboseMessage(fmt.Sprintf("Deleting empty directory %s", entryPath))
+				util.PrintVerboseMessage("Deleting empty directory %s", entryPath)
 				err := os.Remove(entryPath)
 				if err != nil {
 					return err
@@ -280,7 +280,7 @@ func loadSubstitionStrings(sourceDir string) error {
 	}
 
 	// Open substition strings file.
-	util.PrintVerboseMessage(fmt.Sprintf("Loading substition strings from %s", subsPath))
+	util.PrintVerboseMessage("Loading substition strings from %v", subsPath)
 	var file *os.File
 	if file, err = os.Open(subsPath); err != nil {
 		return fmt.Errorf("unable to open %s: %v", subsFileName, err)
@@ -343,11 +343,11 @@ func isReadableFile(info fs.FileInfo, path string) bool {
 	mode := info.Mode()
 	if mode.IsRegular() || (mode&os.ModeSymlink != 0) {
 		if mode.Perm()&(1<<2) == 0 {
-			util.PrintWarning(fmt.Sprintf("Skipping not readable file %s", path))
+			util.PrintWarning("Skipping not readable file %s", path)
 			return false
 		}
 	} else {
-		util.PrintWarning(fmt.Sprintf("Skipping not regular file %s", path))
+		util.PrintWarning("Skipping not regular file %s", path)
 		return false
 	}
 
@@ -392,7 +392,7 @@ func generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath, destDir str
 	if !regen && destIsOlder(mdInfo, outPath) {
 		return relOutPath, nil
 	}
-	util.PrintVerboseMessage(fmt.Sprintf("Generating %s", relOutPath))
+	util.PrintVerboseMessage("Generating %s", relOutPath)
 
 	// Read markdown file.
 	var data []byte
@@ -466,7 +466,7 @@ func copyFileToDest(sourceInfo fs.FileInfo, sourcePath, sourceRelPath, destDir s
 	}
 
 	// Copy file.
-	util.PrintVerboseMessage(fmt.Sprintf("Copying %s", sourceRelPath))
+	util.PrintVerboseMessage("Copying %s", sourceRelPath)
 	var source *os.File
 	var err error
 	if source, err = os.Open(sourcePath); err != nil {
@@ -480,8 +480,8 @@ func copyFileToDest(sourceInfo fs.FileInfo, sourcePath, sourceRelPath, destDir s
 	return nil
 }
 
-// copyStylesCss copies styles.css to destDir.
-func copyStylesCss(destDir string) error {
+// copyStyleCss copies styles.css to destDir.
+func copyStyleCss(destDir string) error {
 	// Copy style.css.
 	var styleCss []byte
 	var err error

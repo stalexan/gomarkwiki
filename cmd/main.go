@@ -24,11 +24,11 @@ func main() {
 		var file *os.File
 		var err error
 		if file, err = os.Create(args.cpuProfile); err != nil {
-			util.PrintFatalError(fmt.Sprintf("Failed to create file %s", args.cpuProfile), err)
+			util.PrintFatalError(err, "Failed to create file %s", args.cpuProfile)
 		}
 		defer file.Close()
 		if err = pprof.StartCPUProfile(file); err != nil {
-			util.PrintFatalError("Failed to start profiler", err)
+			util.PrintFatalError(err, "Failed to start profiler")
 		}
 		defer func() {
 			util.PrintVerboseMessage("Stopping profiler")
@@ -38,7 +38,7 @@ func main() {
 
 	// Generate wiki.
 	if err := generator.GenerateWiki(args.dirs, args.regen, args.clean, version); err != nil {
-		util.PrintFatalError("", err)
+		util.PrintFatalError(err, "")
 	}
 
 	// Success.

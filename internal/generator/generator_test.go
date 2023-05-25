@@ -77,7 +77,7 @@ func TestA01GenerateTinyWiki(t *testing.T) {
 	// Generate wiki
 	testCaseDataDir := filepath.Join(testDataDir, "a01-tiny-wiki")
 	sourceDir := filepath.Join(testCaseDataDir, "source")
-	if err := GenerateWiki(NewWikiDirs(sourceDir, outputDir), true, "test"); err != nil {
+	if err := GenerateWiki(NewWikiDirs(sourceDir, outputDir), true, false, "test"); err != nil {
 		t.Fatalf("Error generating wiki: %v", err)
 	}
 

@@ -71,66 +71,197 @@ func (dirs WikiDirs) CheckDirs() error {
 }
 
 // GenerateWiki generates the wiki.
-func GenerateWiki(dirs WikiDirs, regen bool, version string) error {
+func GenerateWiki(dirs WikiDirs, regen bool, clean bool, version string) error {
 	// Do directories exist?
-	if err := dirs.CheckDirs(); err != nil {
+	var err error
+	if err = dirs.CheckDirs(); err != nil {
 		return err
 	}
 
 	// Generate the part of the wiki that comes from the source content.
-	if err := generateFromContent(dirs, regen, version); err != nil {
+	var relDestPaths map[string]bool
+	if relDestPaths, err = generateFromContent(dirs, regen, version); err != nil {
 		return err
 	}
 
 	// Copy styles.css to destDir.
-	if err := copyStylesCss(dirs.destDir); err != nil {
+	if err = copyStylesCss(dirs.destDir); err != nil {
 		return err
+	}
+	relDestPaths["style.css"] = true
+
+	// Clean dest dir.
+	if clean {
+		if err = cleanDestDir(dirs.destDir, relDestPaths); err != nil {
+			return fmt.Errorf("failed to clean dest dir %s: %v", dirs.destDir, err)
+		}
 	}
 
 	return nil
 }
 
 // generateFromContent generates the part of the wiki that comes from the source content.
-func generateFromContent(dirs WikiDirs, regen bool, version string) error {
+func generateFromContent(dirs WikiDirs, regen bool, version string) (map[string]bool, error) {
 	// Load the substition strings.
 	if err := loadSubstitionStrings(dirs.sourceDir); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Iterate recursively over the source directory and generate the wiki from the files found.
 	util.PrintVerboseMessage(fmt.Sprintf("Looking for markdown in %s", dirs.contentDir))
 	util.PrintVerboseMessage(fmt.Sprintf("Writing HTML to %s", dirs.destDir))
-	err := filepath.Walk(dirs.contentDir, func(path string, info fs.FileInfo, err error) error {
+	relDestPaths := map[string]bool{}
+	err := filepath.Walk(dirs.contentDir, func(contentPath string, info fs.FileInfo, err error) error {
+		// Was there an error looking up this file?
 		if err != nil {
 			return err
 		}
-		if isReadableFile(info, path) {
-			// What's the relative path to this file with respect to the content dir?
-			var relPath string
-			if relPath, err = filepath.Rel(dirs.contentDir, path); err != nil {
-				return fmt.Errorf("failed to find relative path of %s given %s: %v", path, dirs.contentDir, err)
+
+		// Is this file regular and readable?
+		if !isReadableFile(info, contentPath) {
+			return nil
+		}
+
+		// What's the relative path to this file with respect to the content dir?
+		var relContentPath string
+		relContentPath, err = filepath.Rel(dirs.contentDir, contentPath)
+		if err != nil {
+			return fmt.Errorf("failed to find relative path of %s given %s: %v", contentPath, dirs.contentDir, err)
+		}
+
+		// Create the dest version of this file.
+		var relDestPath string
+		if isPathMarkdown(contentPath) {
+			// Generate HTML from markdown.
+			relDestPath, err = generateHtmlFromMarkdown(info, contentPath, relContentPath, dirs.destDir, regen, version)
+			if err != nil {
+				return err
+			}
+		} else {
+			// This is not a markdown file. Just copy it.
+			if err := copyFileToDest(info, contentPath, relContentPath, dirs.destDir, regen); err != nil {
+				return err
+			}
+			relDestPath = relContentPath
+		}
+
+		// Record that this file corresponds to a file from the source dir.
+		relDestPaths[relDestPath] = true
+
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("generate destination content failed: %v", err)
+	}
+
+	return relDestPaths, nil
+}
+
+// cleanDestDir cleans the dest dir by any deleting files that don't have any
+// a corresponding source file, and by deleting any empty directories.
+func cleanDestDir(destDir string, relDestPaths map[string]bool) error {
+	// Delete dest files that don't have a corresponding source file.
+	err := filepath.Walk(destDir, func(destPath string, info fs.FileInfo, err error) error {
+		// Was there an error looking up this file?
+		if err != nil {
+			return err
+		}
+
+		// Is this file regular and readable?
+		if !isReadableFile(info, destPath) {
+			return nil
+		}
+
+		// What's the relative path to this file with respect to the dest dir?
+		var relDestPath string
+		relDestPath, err = filepath.Rel(destDir, destPath)
+		if err != nil {
+			return fmt.Errorf("failed to find relative path of %s given %s: %v", destPath, destDir, err)
+		}
+
+		// Delete this file if it doesn't have a corresponding file in the source dir.
+		if !relDestPaths[relDestPath] {
+			util.PrintVerboseMessage(fmt.Sprintf("Deleting %s", destPath))
+			if err = os.Remove(destPath); err != nil {
+				util.PrintWarning(fmt.Sprintf("Failed to delete %s: %v", destPath, err))
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("cleaning destination failed: %v", err)
+	}
+
+	// Delete empty directories.
+	deleteEmptyDirectories(destDir)
+
+	return nil
+}
+
+// Recursively deletes empty directories using depth-first search
+
+// deleteEmptyDirectories deletes any empty directories within path,
+// including directories that have just empty directories.
+func deleteEmptyDirectories(path string) error {
+	entries, err := listDirectoryContents(path)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		entryPath := filepath.Join(path, entry.Name())
+
+		if entry.IsDir() {
+			// Recursively delete empty directories in subdirectories.
+			err := deleteEmptyDirectories(entryPath)
+			if err != nil {
+				return err
 			}
 
-			// Create the dest version of this file.
-			if isPathMarkdown(path) {
-				// Generate HTML from markdown.
-				if err := generateHtmlFromMarkdown(info, path, relPath, dirs.destDir, regen, version); err != nil {
-					return err
-				}
-			} else {
-				// This is not a markdown file. Just copy it.
-				if err := copyFileToDest(info, path, relPath, dirs.destDir, regen); err != nil {
+			// Check wehther the directory is empty.
+			isEmpty, err := isDirectoryEmpty(entryPath)
+			if err != nil {
+				return err
+			}
+
+			if isEmpty {
+				// Delete the empty directory.
+				util.PrintVerboseMessage(fmt.Sprintf("Deleting empty directory %s", entryPath))
+				err := os.Remove(entryPath)
+				if err != nil {
 					return err
 				}
 			}
 		}
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("generate destination content failed: %v", err)
 	}
 
 	return nil
+}
+
+// listDirectoryContents lists the contents of a directory.
+func listDirectoryContents(path string) ([]os.FileInfo, error) {
+	dir, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer dir.Close()
+
+	entries, err := dir.Readdir(0)
+	if err != nil {
+		return nil, err
+	}
+
+	return entries, nil
+}
+
+// isDirectoryEmpty checks whether a directory is empty.
+func isDirectoryEmpty(path string) (bool, error) {
+	entries, err := listDirectoryContents(path)
+	if err != nil {
+		return false, err
+	}
+	return len(entries) == 0, nil
 }
 
 // subStrings holds the substitution strings. Each pair is the string to look
@@ -248,8 +379,7 @@ type templateData struct {
 }
 
 // generateHtml generates an HTML file from a markdown file.
-func generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath, destDir string, regen bool, version string) error {
-
+func generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath, destDir string, regen bool, version string) (string, error) {
 	// Determine the output path for the HTML file. For example, if the markdown
 	// relative path (mdRelPath) is Foo/Bar.mdwn and the destination directory (destDir)
 	// is /wiki-html, the output path (outPath) is /wiki-html/Foo/Bar.html.
@@ -260,7 +390,7 @@ func generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath, destDir str
 
 	// Skip generating the HTML if markdown is older than current HTML.
 	if !regen && destIsOlder(mdInfo, outPath) {
-		return nil
+		return relOutPath, nil
 	}
 	util.PrintVerboseMessage(fmt.Sprintf("Generating %s", relOutPath))
 
@@ -268,7 +398,7 @@ func generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath, destDir str
 	var data []byte
 	var err error
 	if data, err = os.ReadFile(mdPath); err != nil {
-		return fmt.Errorf("failed to read markdown file %s: %v", mdPath, err)
+		return "", fmt.Errorf("failed to read markdown file %s: %v", mdPath, err)
 	}
 
 	// Make substituions.
@@ -288,12 +418,12 @@ func generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath, destDir str
 	html := &strings.Builder{}
 	title := filepath.Base(relPathNoExt) // Markdown file name without file extension
 	if err = htmlHeaderTemplate.Execute(html, templateData{title, version, rootRelPath}); err != nil {
-		return fmt.Errorf("failed to create HTML header for %s: %v", outPath, err)
+		return "", fmt.Errorf("failed to create HTML header for %s: %v", outPath, err)
 	}
 
 	// Generate the body of the HTML from markdown.
 	if err = markdown.Convert(data, html); err != nil {
-		return fmt.Errorf("failed to generate HTML for %s: %v", outPath, err)
+		return "", fmt.Errorf("failed to generate HTML for %s: %v", outPath, err)
 	}
 
 	// Generate end of HTML file.
@@ -301,15 +431,15 @@ func generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath, destDir str
 
 	// Create output directory if necessary.
 	if err = os.MkdirAll(outDir, 0755); err != nil {
-		return fmt.Errorf("failed to create directory %s: %v", outDir, err)
+		return "", fmt.Errorf("failed to create directory %s: %v", outDir, err)
 	}
 
 	// Write out the HTML file.
 	if err := os.WriteFile(outPath, []byte(html.String()), 0644); err != nil {
-		return fmt.Errorf("failed to write HTML file %s: %v", outPath, err)
+		return "", fmt.Errorf("failed to write HTML file %s: %v", outPath, err)
 	}
 
-	return nil
+	return relOutPath, nil
 }
 
 // destIsOlder returns true if dest is older than source.

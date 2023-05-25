@@ -25,19 +25,19 @@ func PrintWarning(message string) {
 	fmt.Fprintf(os.Stderr, "WARNING: %s\n", message)
 }
 
-// PrintError prints an error to stderr.
-func PrintError(message string) {
-	fmt.Fprintf(os.Stderr, "ERROR: %s\n", message)
-}
-
-// PrintFatalError prints message and error to stderr and exits.
-func PrintFatalError(message string, err error) {
+// PrintError prints message and error to stderr.
+func PrintError(message string, err error) {
 	if err != nil {
 		if message != "" {
 			message += ": "
 		}
 		message += err.Error()
 	}
-	PrintError(message)
+	fmt.Fprintf(os.Stderr, "ERROR: %s\n", message)
+}
+
+// PrintFatalError prints message and error to stderr and exits.
+func PrintFatalError(message string, err error) {
+	PrintError(message, err)
 	os.Exit(1)
 }

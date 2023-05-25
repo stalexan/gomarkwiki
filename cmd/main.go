@@ -37,7 +37,7 @@ func main() {
 	}
 
 	// Generate wiki.
-	if err := generator.GenerateWiki(args.dirs, args.regen, version); err != nil {
+	if err := generator.GenerateWiki(args.dirs, args.regen, args.clean, version); err != nil {
 		util.PrintFatalError("", err)
 	}
 
@@ -50,6 +50,7 @@ type commandLineArgs struct {
 	dirs       generator.WikiDirs
 	cpuProfile string
 	regen      bool
+	clean      bool
 }
 
 // parseCommandLine parses the command line.
@@ -58,6 +59,7 @@ func parseCommandLine() commandLineArgs {
 	printHelp := flag.Bool("help", false, "Show help")
 	printVersion := flag.Bool("version", false, "Print version information")
 	regen := flag.Bool("regen", false, "Regenerate all files regardless of timestamps")
+	clean := flag.Bool("clean", false, "Delete any files in dest_dir that do not have a corresponding file in source_dir")
 	flag.BoolVar(&util.Verbose, "verbose", false, "Print status messages")
 	cpuProfile := flag.String("cpuprofile", "", "Write cpu profile to file")
 
@@ -94,5 +96,6 @@ func parseCommandLine() commandLineArgs {
 		dirs:       dirs,
 		cpuProfile: *cpuProfile,
 		regen:      *regen,
+		clean:      *clean,
 	}
 }

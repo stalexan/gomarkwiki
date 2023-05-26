@@ -46,23 +46,23 @@ func init() {
 
 // WikiDirs stores the source files are located and where to store the generated wiki.
 type WikiDirs struct {
-	sourceDir  string
-	contentDir string
-	destDir    string
+	SourceDir  string
+	ContentDir string
+	DestDir    string
 }
 
 // NewWikiDirs constructs a new instance of WikiDirs.
 func NewWikiDirs(sourceDir, destDir string) WikiDirs {
 	return WikiDirs{
-		sourceDir:  sourceDir,
-		contentDir: filepath.Join(sourceDir, "content"),
-		destDir:    destDir,
+		SourceDir:  sourceDir,
+		ContentDir: filepath.Join(sourceDir, "content"),
+		DestDir:    destDir,
 	}
 }
 
 // CheckDirs checks that the dirs in Wikidirs exist.
 func (dirs WikiDirs) CheckDirs() error {
-	for _, dir := range []string{dirs.sourceDir, dirs.contentDir, dirs.destDir} {
+	for _, dir := range []string{dirs.SourceDir, dirs.ContentDir, dirs.DestDir} {
 		if _, err := os.Stat(dir); os.IsNotExist(err) {
 			return fmt.Errorf("directory '%s' not found", dir)
 		}
@@ -85,15 +85,15 @@ func GenerateWiki(dirs WikiDirs, regen bool, clean bool, version string) error {
 	}
 
 	// Copy styles.css to destDir.
-	if err = copyStyleCss(dirs.destDir); err != nil {
+	if err = copyStyleCss(dirs.DestDir); err != nil {
 		return err
 	}
 	relDestPaths["style.css"] = true
 
 	// Clean dest dir.
 	if clean {
-		if err = cleanDestDir(dirs.destDir, relDestPaths); err != nil {
-			return fmt.Errorf("failed to clean dest dir %s: %v", dirs.destDir, err)
+		if err = cleanDestDir(dirs.DestDir, relDestPaths); err != nil {
+			return fmt.Errorf("failed to clean dest dir %s: %v", dirs.DestDir, err)
 		}
 	}
 
@@ -103,15 +103,14 @@ func GenerateWiki(dirs WikiDirs, regen bool, clean bool, version string) error {
 // generateFromContent generates the part of the wiki that comes from the source content.
 func generateFromContent(dirs WikiDirs, regen bool, version string) (map[string]bool, error) {
 	// Load the substition strings.
-	if err := loadSubstitionStrings(dirs.sourceDir); err != nil {
+	if err := loadSubstitionStrings(dirs.SourceDir); err != nil {
 		return nil, err
 	}
 
 	// Iterate recursively over the source directory and generate the wiki from the files found.
-	util.PrintVerboseMessage("Looking for markdown in %s", dirs.contentDir)
-	util.PrintVerboseMessage("Writing HTML to %s", dirs.destDir)
+	util.PrintVerbose("Generating '%s' from '%s'", dirs.DestDir, dirs.ContentDir)
 	relDestPaths := map[string]bool{}
-	err := filepath.Walk(dirs.contentDir, func(contentPath string, info fs.FileInfo, err error) error {
+	err := filepath.Walk(dirs.ContentDir, func(contentPath string, info fs.FileInfo, err error) error {
 		// Was there an error looking up this file?
 		if err != nil {
 			return err
@@ -124,22 +123,22 @@ func generateFromContent(dirs WikiDirs, regen bool, version string) (map[string]
 
 		// What's the relative path to this file with respect to the content dir?
 		var relContentPath string
-		relContentPath, err = filepath.Rel(dirs.contentDir, contentPath)
+		relContentPath, err = filepath.Rel(dirs.ContentDir, contentPath)
 		if err != nil {
-			return fmt.Errorf("failed to find relative path of %s given %s: %v", contentPath, dirs.contentDir, err)
+			return fmt.Errorf("failed to find relative path of %s given %s: %v", contentPath, dirs.ContentDir, err)
 		}
 
 		// Create the dest version of this file.
 		var relDestPath string
 		if isPathMarkdown(contentPath) {
 			// Generate HTML from markdown.
-			relDestPath, err = generateHtmlFromMarkdown(info, contentPath, relContentPath, dirs.destDir, regen, version)
+			relDestPath, err = generateHtmlFromMarkdown(info, contentPath, relContentPath, dirs.DestDir, regen, version)
 			if err != nil {
 				return err
 			}
 		} else {
 			// This is not a markdown file. Just copy it.
-			if err := copyFileToDest(info, contentPath, relContentPath, dirs.destDir, regen); err != nil {
+			if err := copyFileToDest(info, contentPath, relContentPath, dirs.DestDir, regen); err != nil {
 				return err
 			}
 			relDestPath = relContentPath
@@ -181,7 +180,7 @@ func cleanDestDir(destDir string, relDestPaths map[string]bool) error {
 
 		// Delete this file if it doesn't have a corresponding file in the source dir.
 		if !relDestPaths[relDestPath] {
-			util.PrintVerboseMessage("Deleting %s", destPath)
+			util.PrintVerbose("Deleting %s", destPath)
 			if err = os.Remove(destPath); err != nil {
 				util.PrintWarning("Failed to delete %s: %v", destPath, err)
 			}
@@ -198,8 +197,6 @@ func cleanDestDir(destDir string, relDestPaths map[string]bool) error {
 
 	return nil
 }
-
-// Recursively deletes empty directories using depth-first search
 
 // deleteEmptyDirectories deletes any empty directories within path,
 // including directories that have just empty directories.
@@ -227,7 +224,7 @@ func deleteEmptyDirectories(path string) error {
 
 			if isEmpty {
 				// Delete the empty directory.
-				util.PrintVerboseMessage("Deleting empty directory %s", entryPath)
+				util.PrintVerbose("Deleting empty directory %s", entryPath)
 				err := os.Remove(entryPath)
 				if err != nil {
 					return err
@@ -270,6 +267,11 @@ var subStrings [][2]string
 
 // loadSubstitionStrings loads substition strings from substition-strings.csv
 func loadSubstitionStrings(sourceDir string) error {
+	// Have they already been loaded?
+	if subStrings != nil {
+		return nil
+	}
+
 	// Is there a substition strings file?
 	const subsFileName = "substition-strings.csv"
 	subsPath := filepath.Join(sourceDir, subsFileName)
@@ -280,7 +282,7 @@ func loadSubstitionStrings(sourceDir string) error {
 	}
 
 	// Open substition strings file.
-	util.PrintVerboseMessage("Loading substition strings from %v", subsPath)
+	util.PrintVerbose("Loading substition strings from %v", subsPath)
 	var file *os.File
 	if file, err = os.Open(subsPath); err != nil {
 		return fmt.Errorf("unable to open %s: %v", subsFileName, err)
@@ -392,7 +394,7 @@ func generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath, destDir str
 	if !regen && destIsOlder(mdInfo, outPath) {
 		return relOutPath, nil
 	}
-	util.PrintVerboseMessage("Generating %s", relOutPath)
+	util.PrintVerbose("Generating %s", relOutPath)
 
 	// Read markdown file.
 	var data []byte
@@ -466,7 +468,7 @@ func copyFileToDest(sourceInfo fs.FileInfo, sourcePath, sourceRelPath, destDir s
 	}
 
 	// Copy file.
-	util.PrintVerboseMessage("Copying %s", sourceRelPath)
+	util.PrintVerbose("Copying %s", sourceRelPath)
 	var source *os.File
 	var err error
 	if source, err = os.Open(sourcePath); err != nil {
@@ -480,18 +482,27 @@ func copyFileToDest(sourceInfo fs.FileInfo, sourcePath, sourceRelPath, destDir s
 	return nil
 }
 
+var styleCssCopyNeeded bool = true
+
 // copyStyleCss copies styles.css to destDir.
 func copyStyleCss(destDir string) error {
+	// Is copy neeeded?
+	if !styleCssCopyNeeded {
+		return nil
+	}
+
 	// Copy style.css.
 	var styleCss []byte
 	var err error
-	util.PrintVerboseMessage("Copying style.css")
+	util.PrintVerbose("Copying style.css")
 	if styleCss, err = embeddedFileSystem.ReadFile("static/style.css"); err != nil {
 		return fmt.Errorf("failed to read style.css: %v", err)
 	}
-	if err := copyToFile(fmt.Sprintf("%s/style.css", destDir), bytes.NewReader(styleCss)); err != nil {
+	styleCssPath := fmt.Sprintf("%s/style.css", destDir)
+	if err := copyToFile(styleCssPath, bytes.NewReader(styleCss)); err != nil {
 		return err
 	}
+	styleCssCopyNeeded = false
 
 	return nil
 }

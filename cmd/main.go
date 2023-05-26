@@ -9,6 +9,7 @@ import (
 
 	"github.com/stalexan/gomarkwiki/internal/generator"
 	"github.com/stalexan/gomarkwiki/internal/util"
+	"github.com/stalexan/gomarkwiki/internal/watcher"
 )
 
 // version holds the gomarkwiki version, and is set at build time.
@@ -20,7 +21,7 @@ func main() {
 
 	// Start profiling.
 	if args.cpuProfile != "" {
-		util.PrintVerboseMessage("Starting profiler")
+		util.PrintVerbose("Starting profiler")
 		var file *os.File
 		var err error
 		if file, err = os.Create(args.cpuProfile); err != nil {
@@ -31,7 +32,7 @@ func main() {
 			util.PrintFatalError(err, "Failed to start profiler")
 		}
 		defer func() {
-			util.PrintVerboseMessage("Stopping profiler")
+			util.PrintVerbose("Stopping profiler")
 			pprof.StopCPUProfile()
 		}()
 	}
@@ -39,6 +40,13 @@ func main() {
 	// Generate wiki.
 	if err := generator.GenerateWiki(args.dirs, args.regen, args.clean, version); err != nil {
 		util.PrintFatalError(err, "")
+	}
+
+	// Watch for changes and regenerate files on the fly.
+	if args.watch {
+		if err := watcher.Watch(args.dirs, args.clean, version); err != nil {
+			util.PrintFatalError(err, "")
+		}
 	}
 
 	// Success.
@@ -51,6 +59,7 @@ type commandLineArgs struct {
 	cpuProfile string
 	regen      bool
 	clean      bool
+	watch      bool
 }
 
 // parseCommandLine parses the command line.
@@ -60,7 +69,9 @@ func parseCommandLine() commandLineArgs {
 	printVersion := flag.Bool("version", false, "Print version information")
 	regen := flag.Bool("regen", false, "Regenerate all files regardless of timestamps")
 	clean := flag.Bool("clean", false, "Delete any files in dest_dir that do not have a corresponding file in source_dir")
+	watch := flag.Bool("watch", false, "Remain running and watch for changes to regenerate files on the fly")
 	flag.BoolVar(&util.Verbose, "verbose", false, "Print status messages")
+	flag.BoolVar(&util.Debug, "debug", false, "Print debug messages")
 	cpuProfile := flag.String("cpuprofile", "", "Write cpu profile to file")
 
 	// Define custom usage message.
@@ -97,5 +108,6 @@ func parseCommandLine() commandLineArgs {
 		cpuProfile: *cpuProfile,
 		regen:      *regen,
 		clean:      *clean,
+		watch:      *watch,
 	}
 }

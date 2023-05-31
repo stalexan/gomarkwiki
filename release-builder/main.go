@@ -205,6 +205,7 @@ func buildForTarget(goos, goarch, version string) {
 
 	// Build.
 	command := exec.Command("go", "build",
+        "-trimpath",
 		"-o", binaryPath,
 		"-ldflags", fmt.Sprintf("-s -w -X 'main.version=%s'", version),
 		"./cmd/main.go",

@@ -25,7 +25,7 @@ func main() {
 		var file *os.File
 		var err error
 		if file, err = os.Create(args.cpuProfile); err != nil {
-			util.PrintFatalError(err, "Failed to create file %s", args.cpuProfile)
+			util.PrintFatalError(err, "Failed to create file '%s'", args.cpuProfile)
 		}
 		defer file.Close()
 		if err = pprof.StartCPUProfile(file); err != nil {

@@ -108,7 +108,7 @@ func generateFromContent(dirs WikiDirs, regen bool, version string) (map[string]
 	}
 
 	// Iterate recursively over the source directory and generate the wiki from the files found.
-	util.PrintVerbose("Generating '%s' from '%s'", dirs.DestDir, dirs.ContentDir)
+	util.PrintVerbose("Generating '%s' from '%s'", dirs.DestDir, dirs.SourceDir)
 	relDestPaths := map[string]bool{}
 	err := filepath.Walk(dirs.ContentDir, func(contentPath string, info fs.FileInfo, err error) error {
 		// Was there an error looking up this file?
@@ -180,9 +180,9 @@ func cleanDestDir(destDir string, relDestPaths map[string]bool) error {
 
 		// Delete this file if it doesn't have a corresponding file in the source dir.
 		if !relDestPaths[relDestPath] {
-			util.PrintVerbose("Deleting %s", destPath)
+			util.PrintVerbose("Deleting '%s'", destPath)
 			if err = os.Remove(destPath); err != nil {
-				util.PrintWarning("Failed to delete %s: %v", destPath, err)
+				util.PrintWarning("Failed to delete '%s': %v", destPath, err)
 			}
 		}
 
@@ -224,7 +224,7 @@ func deleteEmptyDirectories(path string) error {
 
 			if isEmpty {
 				// Delete the empty directory.
-				util.PrintVerbose("Deleting empty directory %s", entryPath)
+				util.PrintVerbose("Deleting empty directory '%s'", entryPath)
 				err := os.Remove(entryPath)
 				if err != nil {
 					return err
@@ -282,7 +282,7 @@ func loadSubstitionStrings(sourceDir string) error {
 	}
 
 	// Open substition strings file.
-	util.PrintVerbose("Loading substition strings from %v", subsPath)
+	util.PrintVerbose("Loading substition strings from '%s'", subsPath)
 	var file *os.File
 	if file, err = os.Open(subsPath); err != nil {
 		return fmt.Errorf("unable to open %s: %v", subsFileName, err)
@@ -345,11 +345,11 @@ func isReadableFile(info fs.FileInfo, path string) bool {
 	mode := info.Mode()
 	if mode.IsRegular() || (mode&os.ModeSymlink != 0) {
 		if mode.Perm()&(1<<2) == 0 {
-			util.PrintWarning("Skipping not readable file %s", path)
+			util.PrintWarning("Skipping not readable file '%s'", path)
 			return false
 		}
 	} else {
-		util.PrintWarning("Skipping not regular file %s", path)
+		util.PrintWarning("Skipping not regular file '%s'", path)
 		return false
 	}
 
@@ -394,7 +394,7 @@ func generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath, destDir str
 	if !regen && destIsOlder(mdInfo, outPath) {
 		return relOutPath, nil
 	}
-	util.PrintVerbose("Generating %s", relOutPath)
+	util.PrintVerbose("Generating '%s'", relOutPath)
 
 	// Read markdown file.
 	var data []byte
@@ -468,7 +468,7 @@ func copyFileToDest(sourceInfo fs.FileInfo, sourcePath, sourceRelPath, destDir s
 	}
 
 	// Copy file.
-	util.PrintVerbose("Copying %s", sourceRelPath)
+	util.PrintVerbose("Copying '%s'", sourceRelPath)
 	var source *os.File
 	var err error
 	if source, err = os.Open(sourcePath); err != nil {

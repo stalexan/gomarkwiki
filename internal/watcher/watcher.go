@@ -192,7 +192,7 @@ func waitOnChangesToFinish(dir string, interruptChan chan os.Signal) (bool, []Fi
 
 // Watch watches for changes in the wiki content directory and regenerates files on the fly.
 func Watch(dirs generator.WikiDirs, clean bool, version string) error {
-	util.PrintVerbose("Watching for changes in %s", dirs.ContentDir)
+	util.PrintVerbose("Watching for changes in '%s'", dirs.ContentDir)
 
 	// Create a channel to listen for the interrupt signal
 	interruptChan := make(chan os.Signal, 1)

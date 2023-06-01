@@ -1,4 +1,4 @@
-package generator
+package wiki
 
 import (
 	"fmt"
@@ -74,10 +74,16 @@ func TestA01GenerateTinyWiki(t *testing.T) {
 		t.Fatalf("Failed to create directory %s: %v", outputDir, err)
 	}
 
-	// Generate wiki
+	// Create Wiki instance
 	testCaseDataDir := filepath.Join(testDataDir, "a01-tiny-wiki")
 	sourceDir := filepath.Join(testCaseDataDir, "source")
-	if err := GenerateWiki(NewWikiDirs(sourceDir, outputDir), true, false, "test"); err != nil {
+	var theWiki *Wiki
+	if theWiki, err = NewWiki(sourceDir, outputDir); err != nil {
+		t.Fatalf("Error creating Wiki instance: %v", err)
+	}
+
+	// Generate wiki
+	if err = theWiki.Generate(true, false, false, "test"); err != nil {
 		t.Fatalf("Error generating wiki: %v", err)
 	}
 
@@ -108,13 +114,13 @@ func copyDir(dir1, dir2 string) error {
 	// Make sure dir2 doesn't exit.
 	_, err := os.Stat(dir2)
 	if err == nil || !os.IsNotExist(err) {
-		return fmt.Errorf("directory %s exists", dir2)
+		return fmt.Errorf("directory '%s' exists", dir2)
 	}
 
 	// Copy dir1 to dir2.
 	command := exec.Command("cp", "-r", dir1, dir2)
 	if _, err = command.Output(); err != nil {
-		return fmt.Errorf("failed to copy dir %s to %s", dir1, dir2)
+		return fmt.Errorf("failed to copy dir '%s' to '%s'", dir1, dir2)
 	}
 
 	return nil
@@ -123,7 +129,7 @@ func copyDir(dir1, dir2 string) error {
 func copyFile(sourcePath, destPath string) error {
 	command := exec.Command("cp", sourcePath, destPath)
 	if _, err := command.Output(); err != nil {
-		return fmt.Errorf("failed to copy file %s to %s", sourcePath, destPath)
+		return fmt.Errorf("failed to copy file '%s' to '%s'", sourcePath, destPath)
 	}
 	return nil
 }

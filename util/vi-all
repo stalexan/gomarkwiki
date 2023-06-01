@@ -1,11 +1,8 @@
 #!/bin/bash
 
 FILES_ALL="*/*.go */*/*.go */Dockerfile */*.sh"
-#FILES_CUR="./internal/generator/*.go"
-#FILES_CUR="./release-builder/Dockerfile ./release-builder/*.sh ./release-builder/main.go"
-#FILES_CUR="cmd/*.go */*/*.go"
 #FILES_CUR="cmd/*.go */*/*.go ./release-builder/main.go"
-FILES_CUR="cmd/main.go internal/watcher/watcher.go internal/generator/generator.go internal/util/util.go"
+FILES_CUR="cmd/main.go internal/wiki/wiki.go internal/util/util.go"
 
 #FILES="$FILES_ALL"
 FILES="$FILES_CUR"

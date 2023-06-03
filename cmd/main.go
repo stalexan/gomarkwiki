@@ -126,7 +126,7 @@ func main() {
 		}()
 	}
 
-    // Create Wiki instances
+	// Create Wiki instances
 	var wikis []*wiki.Wiki
 	var err error
 	for _, dirPair := range args.dirs {

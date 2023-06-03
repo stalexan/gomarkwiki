@@ -112,7 +112,7 @@ func preCheckBranchMain() {
 	}
 	branch := strings.TrimSpace(string(output))
 	if branch != "main" {
-		printErrorAndExit("Wrong branch: %s", branch)
+		printErrorAndExit("Branch is not main but %s", branch)
 	}
 }
 
@@ -121,6 +121,24 @@ func preCheckUncommittedChanges() {
 	changes := uncommittedChanges()
 	if len(changes) > 0 {
 		printErrorAndExit("Uncommitted changes found:\n%s", changes)
+	}
+}
+
+func preCheckVersionFile(version string) {
+	// Read version file.
+	buf, err := os.ReadFile("VERSION")
+	if err != nil {
+		if os.IsNotExist(err) {
+			printErrorAndExit("VERSION file not found")
+		} else {
+			printErrorAndExit("Error reading VERSION file: %v", err)
+		}
+	}
+	versionFromFile := strings.TrimSpace(string(buf))
+
+	// Check that versions match.
+	if version != versionFromFile {
+		printErrorAndExit("Version from git (%s) does not match version from VERSION file (%s)", version, versionFromFile)
 	}
 }
 
@@ -295,8 +313,11 @@ func main() {
 	preCheckBranchMain()
 	preCheckUncommittedChanges()
 
-	// Tar source.
+	// Determine version and check VERSION file.
 	version := determineVersion(commit)
+	preCheckVersionFile(version)
+
+	// Tar source.
 	printMessage("gomarkwiki version: %s", version)
 	tarPath := tarSource(version)
 

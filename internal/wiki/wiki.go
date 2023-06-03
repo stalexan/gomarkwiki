@@ -534,7 +534,7 @@ func (wiki *Wiki) watch(clean bool, version string) error {
 	var snapshot []fileSnapshot // Latest snapshot
 	for phaseId := 1; ; phaseId++ {
 		// Watch for changes.
-        var err error
+		var err error
 		if err = watchForChangeEvent(phaseId, wiki.ContentDir, clean, version, snapshot); err != nil {
 			return fmt.Errorf("watch phase %d failed: %v", phaseId, err)
 		}

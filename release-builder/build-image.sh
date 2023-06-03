@@ -3,10 +3,10 @@
 # build-image.sh builds the gomarkwiki/builder image.
 #
 # Usage:
-#   build.sh [go_version]
+#   build-image.sh [go_version]
 #
 # Example:
-#   build.sh 1.20.4
+#   build-image.sh 1.20.4
 
 # Exit on error.
 set -eu

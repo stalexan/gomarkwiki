@@ -43,6 +43,10 @@ type commandLineArgs struct {
 	watch      bool
 }
 
+func formatVersion() string {
+    return fmt.Sprintf("gomarkwiki %s compiled with %s on %s/%s", version, runtime.Version(), runtime.GOOS, runtime.GOARCH)
+}
+
 // parseCommandLine parses the command line.
 func parseCommandLine() commandLineArgs {
 	// Define command line flags.
@@ -75,7 +79,7 @@ func parseCommandLine() commandLineArgs {
 
 	// Print version.
 	if *printVersion {
-		fmt.Printf("gomarkwiki %s compiled with %s on %s/%s\n", version, runtime.Version(), runtime.GOOS, runtime.GOARCH)
+		fmt.Println(formatVersion())
 		os.Exit(0)
 	}
 
@@ -138,6 +142,7 @@ func main() {
 	}
 
 	// Generate wikis
+    util.PrintVerbose("Starting %s", formatVersion())
 	if err = generateWikis(wikis, args.regen, args.clean, args.watch, version); err != nil {
 		util.PrintFatalError(err, "")
 	}

@@ -175,7 +175,7 @@ with the `--version` option:
 
 ```
 $ gomarkwiki --version
-gomarkwiki v0.1.1 compiled with go1.20.4 on linux/amd64
+gomarkwiki v0.2.0 compiled with go1.20.5 on linux/amd64
 ```
 
 ## With Docker
@@ -184,20 +184,20 @@ To do a reproducible build with Docker, we first create a Docker image by
 running `build-image.sh` in the
 [release-builder](https://github.com/stalexan/gomarkwiki/tree/main/release-builder)
 directory, giving it the version of Go that will be used to do the build. Here
-we create an image that will have Go version 1.20.4:
+we create an image that will have Go version 1.20.5:
 
 ```
-./build-image.sh 1.20.4
+./build-image.sh 1.20.5
 ```
 
 Then to create the release build run `build-release.sh`, in the same directory,
 giving it the location of source to build, where to place the binaries that are
 created, and which commit of gomarkwiki to build. Here we build gomarkwiki
-version `v0.1.1` using the source that's in `~/gomarkwiki`, and place the
+version `v0.2.0` using the source that's in `~/gomarkwiki`, and place the
 binaries that are created in `~/tmp/build-output`:
 
 ```
-./build-release.sh ~/gomarkwiki ~/tmp/build-output v0.1.1
+./build-release.sh ~/gomarkwiki ~/tmp/build-output v0.2.0
 ```
 
 ## Without Docker

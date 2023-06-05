@@ -88,6 +88,7 @@ OPTIONS
        -wikis wikis_file
               Generate wikis specified in CSV file, with one wiki defined per
               line formatted as source_dir,dest_dir.
+```
 
 # Examples
 
@@ -100,7 +101,7 @@ should be saved to ~/wikis-html/example-site:
 gomarkwiki ~/gomarkwiki/example-site ~/wikis-html/example-site
 ```
 
-Or to generate multiple wikis say we have the CSV file `/etc/gomarkwiki/wikis.csv` with:
+Or to generate multiple wikis, say we have the CSV file `/etc/gomarkwiki/wikis.csv` with:
 
 ```
 /path/to/src/wiki1,/path/to/dest/wiki1
@@ -128,10 +129,7 @@ version 1.20. To build gomarkwiki from source, execute the following steps:
 
 ```
 $ git clone https://github.com/stalexan/gomarkwiki
-[...]
-
 $ cd gomarkwiki
-
 $ make build
 ```
 
@@ -215,7 +213,7 @@ $ GO_URL="https://dl.google.com/go/go1.20.5.linux-amd64.tar.gz"
 $ cd /tmp
 $ wget -O go.tar.gz.asc "${GO_URL}.asc"
 $ wget -O go.tar.gz "$GO_URL" --progress=dot:giga
-$ gpg --batch --verify go.tar.gz.asc go.tar.gz
+$ gpg --verify go.tar.gz.asc go.tar.gz
 $ tar -C /usr/local -xzf go.tar.gz; \
 ```
 
@@ -227,7 +225,7 @@ gpg --keyserver keyserver.ubuntu.com --recv-keys 'EB4C 1BFD 4F04 2F6D DDCC  EC91
 
 More on this signing key can be found here: google.com [Linux Software Repositories](https://www.google.com/linuxrepositories/).
 
-Add Go to path and set `GOPATH`:
+Add Go to `PATH` and set `GOPATH`:
 
 ```
 $ export PATH=$PATH:/usr/local/go/bin

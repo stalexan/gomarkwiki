@@ -217,7 +217,7 @@ $ gpg --verify go.tar.gz.asc go.tar.gz
 $ tar -C /usr/local -xzf go.tar.gz; \
 ```
 
-If needed, the key signing key can be installed with:
+If needed, the signing key can be installed with:
 
 ```
 gpg --keyserver keyserver.ubuntu.com --recv-keys 'EB4C 1BFD 4F04 2F6D DDCC  EC91 7721 F63B D38B 4796'

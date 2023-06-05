@@ -26,6 +26,7 @@ NAME
 
 SYNOPSIS
        gomarkwiki [options] source_dir dest_dir
+       gomarkwiki [options] -wikis wikis_file
 
 DESCRIPTION
        gomarkwiki generates HTML from Markdown. Each Markdown file found in
@@ -40,6 +41,10 @@ DESCRIPTION
 
        Other files found in source_dir, that are not Markdown, are copied to
        dest_dir.
+
+       Multiple source_dir and dest_dir pairs can be specified using the -wikis
+       option, giving it the path to a CSV file that has one wiki defined per
+       line, formatted as source_dir,dest_dir.
 
        A default CSS style sheet called source.css is placed in dest_dir.
        Styles can be overridden by creating a local.css file in
@@ -59,19 +64,30 @@ DESCRIPTION
        a Markdown file will result in www.foobar.com in the HTML file.
 
 OPTIONS
-       --help
+       -clean
+              Delete any files in dest_dir that do not have a corresponding
+              file in source_dir. By default no files are deleted from dest_dir.
+
+       -help
               Show help and exit.
 
-       --regen
+       -regen
               Regenerate all HTML regardless of timestamps. By default an HTML
               file is only regenerated when the timestamp on its Markdown file
               is newer that the timestamp on the HTML file.
 
-       --verbose
+       -verbose
               Print all status messages.
 
-       --version
+       -version
               Print version information and exit.
+
+       -watch
+              Remain running and watch for changes to regenerate files on the fly.
+
+       -wikis wikis_file
+              Generate wikis specified in CSV file, with one wiki defined per
+              line formatted as source_dir,dest_dir.
 ```
 
 # Examples
@@ -83,6 +99,22 @@ should be saved to ~/wikis-html/example-site:
 
 ```
 gomarkwiki ~/gomarkwiki/example-site ~/wikis-html/example-site
+```
+
+Or to generate multiple wikis, say we have the CSV file `/etc/gomarkwiki/wikis.csv` with:
+
+```
+/path/to/src/wiki1,/path/to/dest/wiki1
+/path/to/src/wiki2,/path/to/dest/wiki2
+/path/to/src/wiki3,/path/to/dest/wiki3
+```
+
+We can generate all three wikis in one pass, clean any files from the dest
+directories that don't have corresponding files in their source directory, and
+remain running to watch for changes and regenerate dest files with:
+
+```
+gomarkwiki -clean -watch -wikis /etc/gomarkwiki/wikis.csv
 ```
 
 # Installation
@@ -97,10 +129,7 @@ version 1.20. To build gomarkwiki from source, execute the following steps:
 
 ```
 $ git clone https://github.com/stalexan/gomarkwiki
-[...]
-
 $ cd gomarkwiki
-
 $ make build
 ```
 
@@ -117,7 +146,7 @@ There’s both pre-compiled binaries for different platforms as well as the
 source code available for download.  Just download and run the one matching
 your system.
 
-If you desire, you can verify the integrity of your downloads by testing the
+If you like, you can verify the integrity of your downloads by testing the
 SHA-256 checksums listed in SHA256SUMS, and verifying the integrity of the file
 SHA256SUMS with the PGP signature in SHA256SUMS.asc. The PGP signature was
 created using the key ([0x26565B27732B7C75](https://www.alexan.org/SeanAlexandre.asc)):
@@ -133,8 +162,8 @@ sub   rsa3072 2023-04-29 [S] [expires: 2024-04-28]
 # Reproducible Builds
 
 The binaries released with each gomarkwiki version are
-[reproducible](https://reproducible-builds.org/), which means that you can
-reproduce a byte identical version from the source code for that release.
+[reproducible](https://reproducible-builds.org/), which means you can reproduce
+a byte identical version from the source code for that release.
 
 Reproducible builds can be done with either Docker using the release build
 scripts found in the [release-builder](https://github.com/stalexan/gomarkwiki/tree/main/example-site)
@@ -146,7 +175,7 @@ with the `--version` option:
 
 ```
 $ gomarkwiki --version
-gomarkwiki v0.1.1 compiled with go1.20.4 on linux/amd64
+gomarkwiki v0.2.0 compiled with go1.20.5 on linux/amd64
 ```
 
 ## With Docker
@@ -155,20 +184,20 @@ To do a reproducible build with Docker, we first create a Docker image by
 running `build-image.sh` in the
 [release-builder](https://github.com/stalexan/gomarkwiki/tree/main/release-builder)
 directory, giving it the version of Go that will be used to do the build. Here
-we create an image that will have Go version 1.20.4:
+we create an image that will have Go version 1.20.5:
 
 ```
-./build-image.sh 1.20.4
+./build-image.sh 1.20.5
 ```
 
 Then to create the release build run `build-release.sh`, in the same directory,
 giving it the location of source to build, where to place the binaries that are
 created, and which commit of gomarkwiki to build. Here we build gomarkwiki
-version `v0.1.1` using the source that's in `~/gomarkwiki`, and place the
+version `v0.2.0` using the source that's in `~/gomarkwiki`, and place the
 binaries that are created in `~/tmp/build-output`:
 
 ```
-./build-release.sh ~/gomarkwiki ~/tmp/build-output v0.1.1
+./build-release.sh ~/gomarkwiki ~/tmp/build-output v0.2.0
 ```
 
 ## Without Docker
@@ -176,47 +205,51 @@ binaries that are created in `~/tmp/build-output`:
 A reproducible build can also be done manually, without Docker. Here we perform
 the same steps as done in the build scripts, but for just one executable. 
 
-First install the version of Go that was used to build Gomarkwiki. Install
-instructions for Go can be found here: go.dev [Download and install](https://go.dev/doc/install).
-
-Then create a `build` user, so that `GOPATH` can be configured to be the same
-as what's used for the release build. 
+First install the version of Go that was used to build Gomarkwiki. For example,
+to install Go 1.20.5:
 
 ```
-$ useradd -m -d /home/build -s /bin/bash build
+$ GO_URL="https://dl.google.com/go/go1.20.5.linux-amd64.tar.gz"
+$ cd /tmp
+$ wget -O go.tar.gz.asc "${GO_URL}.asc"
+$ wget -O go.tar.gz "$GO_URL" --progress=dot:giga
+$ gpg --verify go.tar.gz.asc go.tar.gz
+$ tar -C /usr/local -xzf go.tar.gz; \
 ```
 
-Also, create the same build directory that's used for a release build:
+If needed, the signing key can be installed with:
 
 ```
-$ mkdir -p /output/source
-$ chown -R build:build /output/source
+gpg --keyserver keyserver.ubuntu.com --recv-keys 'EB4C 1BFD 4F04 2F6D DDCC  EC91 7721 F63B D38B 4796'
 ```
 
-Then as the `build` user, configure Go:
+More on this signing key can be found here: google.com [Linux Software Repositories](https://www.google.com/linuxrepositories/).
+
+Add Go to `PATH` and set `GOPATH`:
 
 ```
 $ export PATH=$PATH:/usr/local/go/bin
 $ export GOPATH=$HOME/go
 ```
 
-Extract the source to build:
+Extract the source to build. Here we extract to `/tmp/build`, but any directory will do:
 
 ```
-$ cd /output/source
-$ TZ=America/New_York curl -L https://github.com/stalexan/gomarkwiki/releases/download/v0.1.1/gomarkwiki-v0.1.1.tar.gz | tar xz --strip-components=1
+$ mkdir /tmp/build
+$ cd /tmp/build
+$ curl -L https://github.com/stalexan/gomarkwiki/releases/download/v0.2.0/gomarkwiki-v0.2.0.tar.gz | tar xz --strip-components=1
 ```
 
 Build Gomarkwiki:
 
 ```
-$ GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -X 'main.version=v0.1.1'" -o gomarkwiki_v0.1.1_linux_amd64 ./cmd/main.go
+$ GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X 'main.version=v0.2.0'" -o gomarkwiki_v0.2.0_linux_amd64 ./cmd/main.go
 ```
 
 Create the zipped version:
 
 ```
-$ bzip2 gomarkwiki_v0.1.1_linux_amd64
+$ bzip2 gomarkwiki_v0.2.0_linux_amd64
 ```
 
 Compare the SHA256 sums. Here we've downloaded the release's SHA256SUMS file to
@@ -224,7 +257,7 @@ the current directory:
 
 ```
 $ sha256sum --ignore-missing --check SHA256SUMS
-gomarkwiki_v0.1.1_linux_amd64.bz2: OK
+gomarkwiki_v0.2.0_linux_amd64.bz2: OK
 ```
 
 The SHA256 sums are the same, and we've done a reproducible build.

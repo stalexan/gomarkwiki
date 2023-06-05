@@ -109,7 +109,7 @@ Or to generate multiple wikis, say we have the CSV file `/etc/gomarkwiki/wikis.c
 /path/to/src/wiki3,/path/to/dest/wiki3
 ```
 
-We can generate all wikis in one pass, clean any files from the dest
+We can generate all three wikis in one pass, clean any files from the dest
 directories that don't have corresponding files in their source directory, and
 remain running to watch for changes and regenerate dest files with:
 

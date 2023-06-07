@@ -5,10 +5,9 @@ a fast and straightforward method for generating static websites. It serves as a
 useful tool for maintaining personal wikis and note-taking. I was using 
 [ikiwiki](https://ikiwiki.info/), but wanted a faster alternative that supports 
 more modern syntax, such as [CommonMark](https://en.wikipedia.org/wiki/Markdown#Standardization) and
-[GFM](https://github.github.com/gfm) tables. Developed in Go with 
-the [Goldmark](https://github.com/yuin/goldmark) parser, Gomarkwiki ensures exceptional
-speed, complete support for CommonMark 0.30,
-and support for GFM extensions such as tables.
+[GFM](https://github.github.com/gfm) tables. Gomarkwiki is developed in Go with 
+the [Goldmark](https://github.com/yuin/goldmark) parser, which gives it exceptional
+speed, complete support for CommonMark 0.30, and support for GFM extensions such as tables.
 
 Here's a example site generated with Gomarkwiki:
 [Example](https://www.alexan.org/gomarkwiki-example/Gomarkwiki%20Example.html).
@@ -210,14 +209,13 @@ to install Go 1.20.5:
 
 ```
 $ GO_URL="https://dl.google.com/go/go1.20.5.linux-amd64.tar.gz"
-$ cd /tmp
 $ wget -O go.tar.gz.asc "${GO_URL}.asc"
 $ wget -O go.tar.gz "$GO_URL" --progress=dot:giga
 $ gpg --verify go.tar.gz.asc go.tar.gz
 $ tar -C /usr/local -xzf go.tar.gz; \
 ```
 
-If needed, the signing key can be installed with:
+The signing key can be installed with, if needed:
 
 ```
 gpg --keyserver keyserver.ubuntu.com --recv-keys 'EB4C 1BFD 4F04 2F6D DDCC  EC91 7721 F63B D38B 4796'

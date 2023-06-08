@@ -632,6 +632,8 @@ func filesSnapshotsAreEqual(snapshot1, snapshot2 []fileSnapshot) bool {
 
 // waitForChangesToFinish waits for changes in dir to finish.
 func waitForChangesToFinish(dir string) ([]fileSnapshot, error) {
+	util.PrintDebug("Waiting for changes to finish")
+
 	// Initial wait.
 	time.Sleep(CHANGE_WAIT * time.Millisecond)
 
@@ -665,6 +667,7 @@ func waitForChangesToFinish(dir string) ([]fileSnapshot, error) {
 			if waitTime > MAX_WAIT {
 				waitTime = MAX_WAIT
 			}
+			util.PrintDebug("Waiting %d ms", waitTime)
 			time.Sleep(time.Duration(waitTime) * time.Millisecond)
 
 			// Take an after snapshot.
@@ -709,11 +712,13 @@ func watchForChangeEvent(phaseId int, contentDir string, clean bool, version str
 		}
 		if !filesSnapshotsAreEqual(snapshot, newSnapshot) {
 			// Start a new update.
+			util.PrintDebug("About to watch for changes but file snapshots differ. Starting a new update.")
 			return nil
 		}
 	}
 
 	// Watch for changes.
+	util.PrintDebug("Watching for changes")
 	for {
 		select {
 		case event, ok := <-watcher.Events:

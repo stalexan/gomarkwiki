@@ -62,6 +62,11 @@ DESCRIPTION
        the line "FOOBAR,www.foobar.com" then any instance of {{FOOBAR}} in
        a Markdown file will result in www.foobar.com in the HTML file.
 
+       Files can be ignored with the file source_dir/ignore.txt. Each line
+       should be one regular expression that specifies file names to ignore.
+       For example, an ignore.ext with the line \.tmp$ will ignore all files
+       with that end in .tmp
+
 OPTIONS
        -clean
               Delete any files in dest_dir that do not have a corresponding

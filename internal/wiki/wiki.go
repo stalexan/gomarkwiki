@@ -2,6 +2,7 @@
 package wiki
 
 import (
+	"bufio"
 	"bytes"
 	"embed"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"time"
 
@@ -84,6 +86,8 @@ type Wiki struct {
 	styleCssCopyNeeded bool // Whether style.css nees to be copied to dest
 
 	subStrings [][2]string // Substitution strings. Each pair is the string to look for and what to replace it with.
+
+	ignore []*regexp.Regexp // Which files to ingore
 }
 
 // NewWikiDirs constructs a new instance of WikiDirs.
@@ -94,6 +98,7 @@ func NewWiki(sourceDir, destDir string) (*Wiki, error) {
 		DestDir:            destDir,
 		styleCssCopyNeeded: true,
 		subStrings:         nil,
+		ignore:             nil,
 	}
 
 	// Check that the dirs in Wiki exist.
@@ -105,6 +110,11 @@ func NewWiki(sourceDir, destDir string) (*Wiki, error) {
 
 	// Load substition strings.
 	if err := wiki.loadSubstitionStrings(); err != nil {
+		return nil, err
+	}
+
+	// Load ignore expressions.
+	if err := wiki.loadIgnoreExpressions(); err != nil {
 		return nil, err
 	}
 
@@ -146,6 +156,52 @@ func (wiki Wiki) makeSubstitions(data []byte) []byte {
 		data = bytes.ReplaceAll(data, []byte(pair[0]), []byte(pair[1]))
 	}
 	return data
+}
+
+// loadIngoreExpressions loads regular expressions that define which files to ingore
+func (wiki *Wiki) loadIgnoreExpressions() error {
+	// Open ingore file, if there is one.
+	const ignoreFileName = "ignore.txt"
+	ignorePath := filepath.Join(wiki.SourceDir, ignoreFileName)
+	var file *os.File
+	var err error
+	if file, err = os.Open(ignorePath); err != nil {
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("unable to open '%s': %v", ignorePath, err)
+		} else {
+			// There is no ignore file.
+			return nil
+		}
+	}
+	defer file.Close()
+
+	// Read expressions.
+	scanner := bufio.NewScanner(file)
+	lineCount := 0
+	for scanner.Scan() {
+		lineCount++
+		line := scanner.Text()
+		expression, err := regexp.Compile(line)
+		if err != nil {
+			return fmt.Errorf("error compiling regular expression '%s' on line %d: %v", line, lineCount, err)
+		}
+		wiki.ignore = append(wiki.ignore, expression)
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("error reading '%s': %v", ignorePath, err)
+	}
+
+	return nil
+}
+
+// ignoreFile returns true if file should be ignored.
+func (wiki Wiki) ignoreFile(path string) bool {
+	for _, expr := range wiki.ignore {
+		if expr.MatchString(path) {
+			return true
+		}
+	}
+	return false
 }
 
 // Generate generates a wiki and then optionally watches for changes in the
@@ -242,6 +298,12 @@ func (wiki Wiki) generateFromContent(regen bool, version string) (map[string]boo
 
 		// Is this file regular and readable?
 		if !isReadableFile(info, contentPath) {
+			return nil
+		}
+
+		// Ignore this file?
+		if wiki.ignoreFile(contentPath) {
+			util.PrintVerbose("Ignoring '%s'", contentPath)
 			return nil
 		}
 
@@ -718,7 +780,6 @@ func watchForChangeEvent(phaseId int, contentDir string, clean bool, version str
 	}
 
 	// Watch for changes.
-	util.PrintDebug("Watching for changes")
 	for {
 		select {
 		case event, ok := <-watcher.Events:

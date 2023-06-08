@@ -38,17 +38,25 @@ func PrintWarning(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "WARNING: %s\n", formatMessage(format, args))
 }
 
+func formatErrorMessage(err error, format string, args []interface{}) string {
+	message := "ERROR"
+	if format != "" {
+		message += fmt.Sprintf(": %s", formatMessage(format, args))
+	}
+	if err != nil {
+		message += fmt.Sprintf(": %v", err)
+	}
+	return message
+}
+
+// PrintError prints a error message to stderr.
+func PrintError(err error, format string, args ...interface{}) {
+	fmt.Fprintf(os.Stderr, "%s\n", formatErrorMessage(err, format, args))
+}
+
 // PrintFatalError prints a error message to stderr and exits.
 func PrintFatalError(err error, format string, args ...interface{}) {
-	message := formatMessage(format, args)
-	if err != nil {
-		if message != "" {
-			message += ": "
-		}
-		message += err.Error()
-	}
-	fmt.Fprintf(os.Stderr, "ERROR: %s\n", message)
-
+	fmt.Fprintf(os.Stderr, "%s\n", formatErrorMessage(err, format, args))
 	os.Exit(1)
 }
 

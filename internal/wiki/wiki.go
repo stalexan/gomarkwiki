@@ -236,7 +236,8 @@ func (wiki Wiki) generateFromContent(regen bool, version string) (map[string]boo
 	err := filepath.Walk(wiki.ContentDir, func(contentPath string, info fs.FileInfo, err error) error {
 		// Was there an error looking up this file?
 		if err != nil {
-			return err
+			util.PrintError(err, "failed to lookup info on '%s'", contentPath)
+			return nil
 		}
 
 		// Is this file regular and readable?
@@ -248,7 +249,8 @@ func (wiki Wiki) generateFromContent(regen bool, version string) (map[string]boo
 		var relContentPath string
 		relContentPath, err = filepath.Rel(wiki.ContentDir, contentPath)
 		if err != nil {
-			return fmt.Errorf("failed to find relative path of '%s' given '%s': %v", contentPath, wiki.ContentDir, err)
+			util.PrintError(err, "failed to find relative path of '%s' given '%s'", contentPath, wiki.ContentDir)
+			return nil
 		}
 
 		// Create the dest version of this file.
@@ -257,18 +259,22 @@ func (wiki Wiki) generateFromContent(regen bool, version string) (map[string]boo
 			// Generate HTML from markdown.
 			relDestPath, err = wiki.generateHtmlFromMarkdown(info, contentPath, relContentPath, regen, version)
 			if err != nil {
-				return err
+				util.PrintError(err, "failed to find generate HTML for '%s'", contentPath)
+				return nil
 			}
 		} else {
 			// This is not a markdown file. Just copy it.
 			if err := wiki.copyFileToDest(info, contentPath, relContentPath, regen); err != nil {
-				return err
+				util.PrintError(err, "failed to copy '%s' to dest", contentPath)
+				return nil
 			}
 			relDestPath = relContentPath
 		}
 
 		// Record that this file corresponds to a file from the source dir.
-		relDestPaths[relDestPath] = true
+		if relDestPath != "" {
+			relDestPaths[relDestPath] = true
+		}
 
 		return nil
 	})
@@ -314,7 +320,12 @@ func (wiki Wiki) generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath 
 	var data []byte
 	var err error
 	if data, err = os.ReadFile(mdPath); err != nil {
-		return "", fmt.Errorf("failed to read markdown file '%s': %v", mdPath, err)
+		if os.IsNotExist(err) {
+			util.PrintVerbose("markdown '%s' no longer exists and so no HTML will be generated for it", mdPath)
+			return "", nil
+		} else {
+			return "", fmt.Errorf("failed to read markdown file '%s': %v", mdPath, err)
+		}
 	}
 
 	// Make substituions.
@@ -339,7 +350,7 @@ func (wiki Wiki) generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath 
 
 	// Generate the body of the HTML from markdown.
 	if err = markdown.Convert(data, html); err != nil {
-		return "", fmt.Errorf("failed to generate HTML for '%s': %v", outPath, err)
+		return "", fmt.Errorf("failed to generate HTML body for '%s': %v", outPath, err)
 	}
 
 	// Generate end of HTML file.
@@ -389,7 +400,11 @@ func (wiki Wiki) copyFileToDest(sourceInfo fs.FileInfo, sourcePath, sourceRelPat
 	var source *os.File
 	var err error
 	if source, err = os.Open(sourcePath); err != nil {
-		return fmt.Errorf("failed to open '%s': %v", sourcePath, err)
+		if os.IsNotExist(err) {
+			util.PrintVerbose("'%s' was not copied to dest because it no longer exists", sourcePath)
+		} else {
+			util.PrintError(err, "could not open '%s' for copy to dest", sourcePath)
+		}
 	}
 	defer source.Close()
 	if err := copyToFile(destPath, source); err != nil {

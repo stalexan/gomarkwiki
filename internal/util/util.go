@@ -63,16 +63,16 @@ func PrintFatalError(err error, format string, args ...interface{}) {
 // LoadStringPairs loads string pairs from a CSV file, where each line is two
 // comma separated strings.
 func LoadStringPairs(csvPath string) ([][2]string, error) {
-	// Does the CSV file exist?
-	var err error
-	if _, err = os.Stat(csvPath); err != nil {
-		return nil, nil
-	}
-
 	// Open file.
 	var file *os.File
+    var err error
 	if file, err = os.Open(csvPath); err != nil {
-		return nil, fmt.Errorf("unable to open '%s': %v", csvPath, err)
+		if !os.IsNotExist(err) {
+		    return nil, fmt.Errorf("unable to open '%s': %v", csvPath, err)
+		} else {
+			// There is no string pairs file.
+			return nil, nil
+        }
 	}
 	defer file.Close()
 

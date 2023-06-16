@@ -65,14 +65,14 @@ func PrintFatalError(err error, format string, args ...interface{}) {
 func LoadStringPairs(csvPath string) ([][2]string, error) {
 	// Open file.
 	var file *os.File
-    var err error
+	var err error
 	if file, err = os.Open(csvPath); err != nil {
 		if !os.IsNotExist(err) {
-		    return nil, fmt.Errorf("unable to open '%s': %v", csvPath, err)
+			return nil, fmt.Errorf("unable to open '%s': %v", csvPath, err)
 		} else {
 			// There is no string pairs file.
 			return nil, nil
-        }
+		}
 	}
 	defer file.Close()
 

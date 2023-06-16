@@ -43,6 +43,7 @@ type commandLineArgs struct {
 	watch      bool
 }
 
+// formatVersion() returns the string displayed by the --version option.
 func formatVersion() string {
 	return fmt.Sprintf("gomarkwiki %s compiled with %s on %s/%s", version, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 }
@@ -154,7 +155,7 @@ func main() {
 // generateWikis generates the wikis and then optionally watch watches for
 // changes in each wiki to regenerate files on the fly.
 func generateWikis(wikis []*wiki.Wiki, regen, clean, watch bool, version string) error {
-	// Create channels to watch for completions, errors, and terminate signal.
+	// Create channels to watch for completions, errors, and the terminate signal.
 	doneChan := make(chan struct{})
 	errorChan := make(chan error)
 	termChan := make(chan os.Signal, 1)

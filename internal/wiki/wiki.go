@@ -4,8 +4,8 @@ package wiki
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"embed"
-	"errors"
 	"fmt"
 	"html/template"
 	"io"
@@ -33,8 +33,12 @@ var htmlHeaderTemplate *template.Template
 //go:embed static/style.css
 var embeddedFileSystem embed.FS
 
-const CHANGE_WAIT = 100 // milliseconds
-const MAX_WAIT = 5000   // milliseconds
+// Times to wait while waiting for changes to finish.
+const CHANGE_WAIT = 100      // milliseconds
+const MAX_CHANGE_WAIT = 5000 // milliseconds
+
+// Max time before regenerating wiki while watching for changes.
+const MAX_REGEN_INTERVAL = 10 // minutes
 
 // htmlHeaderTemplateText is the text used to create the HTML template that
 // generates the start of each HTML file.
@@ -76,12 +80,12 @@ func init() {
 	htmlHeaderTemplate = template.Must(template.New("html").Parse(htmlHeaderTemplateText))
 }
 
-// Wiki stores data about a wiki to generate
+// Wiki stores data about a single wiki.
 type Wiki struct {
 	// Directories
 	SourceDir  string // Wiki source directory
-	ContentDir string // Content directory within wiki source
-	DestDir    string // Dest dir where generated wiki will be stored
+	ContentDir string // Content directory within source directory
+	DestDir    string // Dest directory where wiki will be generated
 
 	styleCssCopyNeeded bool // Whether style.css nees to be copied to dest
 
@@ -121,7 +125,7 @@ func NewWiki(sourceDir, destDir string) (*Wiki, error) {
 	return &wiki, nil
 }
 
-// loadSubstitionStrings loads substition strings for a wiki, from substition-strings.csv
+// loadSubstitionStrings loads substition strings for a wiki, from its substition-strings.csv
 func (wiki *Wiki) loadSubstitionStrings() error {
 	// Is there a substition strings file?
 	const subsFileName = "substition-strings.csv"
@@ -132,7 +136,7 @@ func (wiki *Wiki) loadSubstitionStrings() error {
 		return fmt.Errorf("failed to load substition strings from '%s': %v", subsPath, err)
 	}
 	if len(pairs) == 0 {
-		// There are no substition strings.
+		// There's either no substituion strings file or the file is empty.
 		return nil
 	}
 
@@ -150,7 +154,7 @@ func (wiki *Wiki) loadSubstitionStrings() error {
 	return nil
 }
 
-// makeSubstitions makes substitions in data.
+// makeSubstitions makes string substitions in data.
 func (wiki Wiki) makeSubstitions(data []byte) []byte {
 	for _, pair := range wiki.subStrings {
 		data = bytes.ReplaceAll(data, []byte(pair[0]), []byte(pair[1]))
@@ -158,7 +162,7 @@ func (wiki Wiki) makeSubstitions(data []byte) []byte {
 	return data
 }
 
-// loadIngoreExpressions loads regular expressions that define which files to ingore
+// loadIngoreExpressions loads regular expressions that define which files to ingore.
 func (wiki *Wiki) loadIgnoreExpressions() error {
 	// Open ingore file, if there is one.
 	const ignoreFileName = "ignore.txt"
@@ -194,7 +198,7 @@ func (wiki *Wiki) loadIgnoreExpressions() error {
 	return nil
 }
 
-// ignoreFile returns true if file should be ignored.
+// ignoreFile returns true if the file at path should be ignored.
 func (wiki Wiki) ignoreFile(path string) bool {
 	for _, expr := range wiki.ignore {
 		if expr.MatchString(path) {
@@ -207,6 +211,8 @@ func (wiki Wiki) ignoreFile(path string) bool {
 // Generate generates a wiki and then optionally watches for changes in the
 // wiki to regenerate files on the fly.
 func (wiki *Wiki) Generate(regen, clean, watch bool, version string) error {
+	util.PrintVerbose("Generating wiki '%s' from '%s'", wiki.DestDir, wiki.SourceDir)
+
 	// Generate wiki.
 	if err := wiki.generate(regen, clean, version); err != nil {
 		return fmt.Errorf("failed to generate wiki '%s': %v", wiki.SourceDir, err)
@@ -224,7 +230,7 @@ func (wiki *Wiki) Generate(regen, clean, watch bool, version string) error {
 
 // generate generates the wiki.
 func (wiki *Wiki) generate(regen, clean bool, version string) error {
-	// Generate the part of the wiki that comes from the source content.
+	// Generate the part of the wiki that comes from content found in the source dir.
 	var relDestPaths map[string]bool
 	var err error
 	if relDestPaths, err = wiki.generateFromContent(regen, version); err != nil {
@@ -270,10 +276,10 @@ func isReadableFile(info fs.FileInfo, path string) bool {
 	return true
 }
 
-// markdownExts holds markdown file extensions.
+// markdownExts specifies markdown file exptensions.
 var markdownExts = [...]string{".md", ".mdwn", ".markdown"}
 
-// isPathMarkdown determines whether the file name ends with a markdown extension.
+// isPathMarkdown returns true if path has a markdown extension.
 func isPathMarkdown(path string) bool {
 	ext := filepath.Ext(path)
 	for _, markdownExt := range markdownExts {
@@ -286,8 +292,8 @@ func isPathMarkdown(path string) bool {
 
 // generateFromContent generates the part of the wiki that comes from the source content.
 func (wiki Wiki) generateFromContent(regen bool, version string) (map[string]bool, error) {
-	// Iterate recursively over the source directory and generate the wiki from the files found.
-	util.PrintVerbose("Generating wiki '%s' from '%s'", wiki.DestDir, wiki.SourceDir)
+	// Walk the source directory and generate the wiki from the files found.
+	util.PrintDebug("Generating wiki '%s' from '%s'", wiki.DestDir, wiki.SourceDir)
 	relDestPaths := map[string]bool{}
 	err := filepath.Walk(wiki.ContentDir, func(contentPath string, info fs.FileInfo, err error) error {
 		// Was there an error looking up this file?
@@ -431,9 +437,9 @@ func (wiki Wiki) generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath 
 	return relOutPath, nil
 }
 
-// copyFile copies source to the file at destPath.
+// copyFile copies source to the file at destPath, overwriting destPath if it exists.
 func copyToFile(destPath string, source io.Reader) error {
-	// Create dest file.
+	// Create and open dest file. Truncate it if it exists.
 	var destFile *os.File
 	var err error
 	if destFile, err = os.Create(destPath); err != nil {
@@ -476,7 +482,7 @@ func (wiki Wiki) copyFileToDest(sourceInfo fs.FileInfo, sourcePath, sourceRelPat
 	return nil
 }
 
-// cleanDestDir cleans the dest dir by any deleting files that don't have any
+// cleanDestDir cleans the dest dir by any deleting files that don't have
 // a corresponding source file, and by deleting any empty directories.
 func (wiki Wiki) cleanDestDir(relDestPaths map[string]bool) error {
 	// Delete dest files that don't have a corresponding source file.
@@ -543,8 +549,8 @@ func isDirectoryEmpty(path string) (bool, error) {
 	return len(entries) == 0, nil
 }
 
-// deleteEmptyDirectories deletes any empty directories within path,
-// including directories that have just empty directories.
+// deleteEmptyDirectories deletes any empty directories within path, including
+// directories that have just empty directories.
 func deleteEmptyDirectories(path string) error {
 	entries, err := listDirectoryContents(path)
 	if err != nil {
@@ -609,23 +615,90 @@ func (wiki *Wiki) watch(clean bool, version string) error {
 	util.PrintVerbose("Watching for changes in '%s'", wiki.ContentDir)
 
 	var snapshot []fileSnapshot // Latest snapshot
-	for phaseId := 1; ; phaseId++ {
-		// Watch for changes.
+	for {
+		// Wait for when wiki needs to be updated.
 		var err error
-		if err = watchForChangeEvent(phaseId, wiki.ContentDir, clean, version, snapshot); err != nil {
-			return fmt.Errorf("watch phase %d failed: %v", phaseId, err)
-		}
-
-		// Wait for changes to finish.
-		if snapshot, err = waitForChangesToFinish(wiki.ContentDir); err != nil {
-			return fmt.Errorf("wait for changes phase %d failed: %v", phaseId, err)
+		if snapshot, err = wiki.waitForWhenGenerateNeeded(clean, version, snapshot); err != nil {
+			return fmt.Errorf("failed waiting to update %s wiki: %v", wiki.SourceDir, err)
 		}
 
 		// Update wiki.
-		if err := wiki.generate(false, clean, version); err != nil {
-			return fmt.Errorf("failed to update wiki: %v", err)
+		if err = wiki.generate(false, clean, version); err != nil {
+			return fmt.Errorf("failed to update %s wiki: %v", wiki.SourceDir, err)
 		}
 	}
+}
+
+func (wiki *Wiki) waitForWhenGenerateNeeded(clean bool, version string, snapshot []fileSnapshot) ([]fileSnapshot, error) {
+	// Create timeout context so that a generate is done at least every MAX_REGEN_INTERVAL minutes.
+	ctx := context.Background()
+	ctx, cancelCtx := context.WithTimeout(ctx, MAX_REGEN_INTERVAL*time.Minute)
+	defer cancelCtx()
+
+	// Create channel to propagate errors from within goroutine.
+	errorChan := make(chan error, 1)
+	defer func() {
+		close(errorChan)
+	}()
+
+	// Create a chan for the goroutine to say it's done.
+	doneChan := make(chan struct{}, 1)
+	defer func() {
+		close(doneChan)
+	}()
+
+	// Create a chan to return snapshot.
+	snapshotChan := make(chan []fileSnapshot, 1)
+	defer func() {
+		close(snapshotChan)
+	}()
+
+	go func() {
+		// Say when this goroutine is done.
+		defer func() {
+			doneChan <- struct{}{}
+		}()
+
+		// Watch for changes.
+		var err error
+		if err = watchForChangeEvent(ctx, wiki.ContentDir, clean, version, snapshot); err != nil {
+			errorChan <- fmt.Errorf("watch for change event in %s failed: %v", wiki.SourceDir, err)
+			return
+		}
+
+		// Continue?
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		// Wait for changes to finish.
+		var newSnapshot []fileSnapshot
+		if newSnapshot, err = waitForChangesToFinish(ctx, wiki.ContentDir); err != nil {
+			errorChan <- fmt.Errorf("wait for changes to finish for %s failed: %v", wiki.SourceDir, err)
+			return
+		}
+
+		// We're exiting normally.
+		snapshotChan <- newSnapshot
+	}()
+
+	// Wait on results.
+	var err error
+	select {
+	case snapshot = <-snapshotChan:
+	case err = <-errorChan:
+	case <-ctx.Done():
+		if ctx.Err() == context.DeadlineExceeded {
+			util.PrintDebug("Regen timer expired for %s", wiki.SourceDir)
+		}
+	}
+
+	// Wait for goroutine to finish, so that the chans it writes to aren't closed before any final writes.
+	<-doneChan
+
+	return snapshot, err
 }
 
 // watchDirRecursive sets up watches on the specified directory and all subdirectories recursively.
@@ -693,48 +766,66 @@ func filesSnapshotsAreEqual(snapshot1, snapshot2 []fileSnapshot) bool {
 }
 
 // waitForChangesToFinish waits for changes in dir to finish.
-func waitForChangesToFinish(dir string) ([]fileSnapshot, error) {
-	util.PrintDebug("Waiting for changes to finish")
-
-	// Initial wait.
-	time.Sleep(CHANGE_WAIT * time.Millisecond)
-
+func waitForChangesToFinish(ctx context.Context, dir string) ([]fileSnapshot, error) {
+	util.PrintDebug("Waiting for changes to finish in %s", dir)
 	// Create channels.
 	snapshotsMatchChan := make(chan []fileSnapshot, 1) // Signals that changes are complete.
 	errorChan := make(chan error, 1)                   // Signals that an error happened while waiting.
+	doneChan := make(chan struct{}, 1)                 // Signals that goroutine is done.
 	defer func() {
 		close(snapshotsMatchChan)
 		close(errorChan)
+		close(doneChan)
 	}()
 
 	// Wait for changes to complete.
 	go func() {
+		// Say when this goroutine is done.
+		defer func() {
+			doneChan <- struct{}{}
+		}()
+
+		// Initial wait.
+		time.Sleep(CHANGE_WAIT * time.Millisecond)
+
 		var snapshot1, snapshot2 []fileSnapshot
 		var err error
 		for waitPass := 1; !filesSnapshotsAreEqual(snapshot1, snapshot2); waitPass++ {
-			util.PrintDebug("Wait pass %d", waitPass)
-
-			// Take a before snapshot.
-			if snapshot2 != nil {
-				snapshot1 = snapshot2
-			} else {
-				snapshot1, err = takeFilesSnapshot(dir)
-				if err != nil {
-					errorChan <- fmt.Errorf("failed to take files snapshot: %v", err)
+			select {
+			case <-ctx.Done():
+				// The context has ended and so end this goroutine too.
+				return
+			default:
+				// Print wait status.
+				message := fmt.Sprintf("Wait for change pass %d for %s", waitPass, dir)
+				if waitPass > 1 {
+					util.PrintVerbose(message)
+				} else {
+					util.PrintDebug(message)
 				}
-			}
 
-			// Wait
-			waitTime := waitPass * waitPass * CHANGE_WAIT
-			if waitTime > MAX_WAIT {
-				waitTime = MAX_WAIT
-			}
-			util.PrintDebug("Waiting %d ms", waitTime)
-			time.Sleep(time.Duration(waitTime) * time.Millisecond)
+				// Take a before snapshot.
+				if snapshot2 != nil {
+					snapshot1 = snapshot2
+				} else {
+					snapshot1, err = takeFilesSnapshot(dir)
+					if err != nil {
+						errorChan <- fmt.Errorf("failed to take files snapshot for %s: %v", dir, err)
+					}
+				}
 
-			// Take an after snapshot.
-			if snapshot2, err = takeFilesSnapshot(dir); err != nil {
-				errorChan <- fmt.Errorf("failed to take files snapshot: %v", err)
+				// Wait
+				waitTime := waitPass * waitPass * CHANGE_WAIT
+				if waitTime > MAX_CHANGE_WAIT {
+					waitTime = MAX_CHANGE_WAIT
+				}
+				util.PrintDebug("Waiting %d ms for %s", waitTime, dir)
+				time.Sleep(time.Duration(waitTime) * time.Millisecond)
+
+				// Take an after snapshot.
+				if snapshot2, err = takeFilesSnapshot(dir); err != nil {
+					errorChan <- fmt.Errorf("failed to take files snapshot for %s: %v", dir, err)
+				}
 			}
 		}
 
@@ -742,20 +833,27 @@ func waitForChangesToFinish(dir string) ([]fileSnapshot, error) {
 		snapshotsMatchChan <- snapshot2
 	}()
 
-	// Wait on changes to complete, or exit if there's a ctrl-c.
-	for {
-		select {
-		case snapshot := <-snapshotsMatchChan:
-			util.PrintDebug("Snapshots match")
-			return snapshot, nil
-		case err := <-errorChan:
-			return nil, err
-		}
+	// Wait for results.
+	var snapshot []fileSnapshot
+	var err error
+	select {
+	case snapshot = <-snapshotsMatchChan:
+		util.PrintDebug("Snapshots match for %s", dir)
+		break
+	case err = <-errorChan:
+		break
+	case <-ctx.Done():
+		break
 	}
+
+	// Wait for goroutine to finish, so that the chans it writes to aren't closed before any final writes.
+	<-doneChan
+
+	return snapshot, err
 }
 
 // watchForChangeEvent watches for a change to the wiki content.
-func watchForChangeEvent(phaseId int, contentDir string, clean bool, version string, snapshot []fileSnapshot) error {
+func watchForChangeEvent(ctx context.Context, contentDir string, clean bool, version string, snapshot []fileSnapshot) error {
 	// Create and initialize watcher.
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -763,36 +861,37 @@ func watchForChangeEvent(phaseId int, contentDir string, clean bool, version str
 	}
 	defer watcher.Close()
 	if err = watchDirRecursive(contentDir, watcher); err != nil {
-		return fmt.Errorf("failed to initialize watcher: %v", err)
+		return fmt.Errorf("failed to initialize watcher for %s: %v", contentDir, err)
 	}
 
 	// Make sure files haven't changed in between when wiki update started and new watch started.
 	if snapshot != nil {
 		newSnapshot, err := takeFilesSnapshot(contentDir)
 		if err != nil {
-			return fmt.Errorf("failed to take new snapshot: %v", err)
+			return fmt.Errorf("failed to take new snapshot for %s: %v", contentDir, err)
 		}
 		if !filesSnapshotsAreEqual(snapshot, newSnapshot) {
-			// Start a new update.
-			util.PrintDebug("About to watch for changes but file snapshots differ. Starting a new update.")
+			// Files have changed. Start a new update.
+			util.PrintVerbose("About to watch for changes but file snapshots differ. Starting a new update.")
 			return nil
 		}
 	}
 
 	// Watch for changes.
-	for {
-		select {
-		case event, ok := <-watcher.Events:
-			if !ok {
-				return fmt.Errorf("watcher unexpectedly closed while watching '%s' %v", contentDir, err)
-			}
-			util.PrintDebug("Watcher event detected: %v", event)
-			return nil
-		case err, ok := <-watcher.Errors:
-			if !ok {
-				return errors.New("failed to read watcher error")
-			}
-			return fmt.Errorf("watcher error: %v", err)
+	select {
+	case event, ok := <-watcher.Events:
+		if !ok {
+			return fmt.Errorf("watcher unexpectedly closed while watching '%s' %v", contentDir, err)
 		}
+		util.PrintDebug("Watcher event detected for %s: %v", contentDir, event)
+		return nil
+	case err, ok := <-watcher.Errors:
+		if !ok {
+			return fmt.Errorf("failed to read watcher error for %s", contentDir)
+		}
+		return fmt.Errorf("watcher error for %s: %v", contentDir, err)
+	case <-ctx.Done():
+		// Regen timer has expired.
+		return nil
 	}
 }

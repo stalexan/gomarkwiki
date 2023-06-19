@@ -64,7 +64,7 @@ DESCRIPTION
 
        Files can be ignored with the file source_dir/ignore.txt. Each line
        should be one regular expression that specifies file names to ignore.
-       For example, an ignore.ext with the line \.tmp$ will ignore all files
+       For example, an ignore.txt with the line \.tmp$ will ignore all files
        with that end in .tmp
 
 OPTIONS

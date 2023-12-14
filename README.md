@@ -1,23 +1,21 @@
-# Introduction
+# Gomarkwiki
 
-Gomarkwiki is a command-line program that converts Markdown to HTML, providing
-a fast and straightforward method for generating static websites. It serves as a 
-useful tool for maintaining personal wikis and note-taking. I was using 
-[ikiwiki](https://ikiwiki.info/), but wanted a faster alternative that supports 
-more modern syntax, such as [CommonMark](https://en.wikipedia.org/wiki/Markdown#Standardization) and
-[GFM](https://github.github.com/gfm) tables. Gomarkwiki is developed in Go with 
-the [Goldmark](https://github.com/yuin/goldmark) parser, which gives it exceptional
-speed, complete support for CommonMark 0.30, and support for GFM extensions such as tables.
+Gomarkwiki is a command-line program that converts Markdown to HTML, to create
+static websites from Markdown.  I use it for note taking and personal wikis.
+I was using [ikiwiki](https://ikiwiki.info/), but wanted something faster, and
+that supported more modern syntax and formatting. Gomarkwiki is developed in Go
+using the [Goldmark](https://github.com/yuin/goldmark) parser, which makes it very
+fast, and gives it support for
+[CommonMark](https://en.wikipedia.org/wiki/Markdown#Standardization) as well as
+[GitHub Flavored Markdown](https://github.github.com/gfm) (GFM), such as tables. 
 
-Here's a example site generated with Gomarkwiki:
-[Example](https://www.alexan.org/gomarkwiki-example/Gomarkwiki%20Example.html).
-This site is a few pages from personal wikis I keep. The pages aren't meant for
-public consumption, but give a good idea of what Gomarkwiki can do.
-The Markdown used to create this is in the
-[example-site](https://github.com/stalexan/gomarkwiki/tree/main/example-site)
-directory.
+Here's a simple example site generated with 
+Gomarkwiki: [Example](https://www.alexan.org/gomarkwiki-example/Gomarkwiki%20Example.html).
+The site is just a few pages from personal wikis I keep.
+The Markdown used to create it in the directory
+[example-site](https://github.com/stalexan/gomarkwiki/tree/main/example-site).
 
-# Usage
+## Usage
 
 ```
 NAME
@@ -45,10 +43,16 @@ DESCRIPTION
        option, giving it the path to a CSV file that has one wiki defined per
        line, formatted as source_dir,dest_dir.
 
-       A default CSS style sheet called source.css is placed in dest_dir.
+       A default CSS style sheet called style.css is placed in dest_dir.
        Styles can be overridden by creating a local.css file in
        source_dir/content. The local.css file will be copied to dest_dir, and
        override any default styles found in styles.css.
+
+       A second CSS style sheet called github-style.css is placed in dest_dir
+       as well, to format pages using GitHub-like styles. To use this CSS file
+       for a given Markdown file, start the file with the directive
+       #[style(github)]. These styles can be overridden too, by creating
+       a github-local.css file in source_dir/content.
 
        A favicon can be placed in source_dir/content to give HTML pages
        a default icon. The filename should be favicon.ico.
@@ -94,7 +98,7 @@ OPTIONS
               line formatted as source_dir,dest_dir.
 ```
 
-# Examples
+## Examples
 
 To generate the HTML for the example site found in the
 [example-site](https://github.com/stalexan/gomarkwiki/tree/main/example-site)
@@ -115,18 +119,18 @@ Or to generate multiple wikis, say we have the CSV file `/etc/gomarkwiki/wikis.c
 
 We can generate all three wikis in one pass, clean any files from the dest
 directories that don't have corresponding files in their source directory, and
-remain running to watch for changes and regenerate dest files with:
+remain running to watch for changes and regenerate destination files with:
 
 ```
 gomarkwiki -clean -watch -wikis /etc/gomarkwiki/wikis.csv
 ```
 
-# Installation
+## Installation
 
 Gomarkwiki can be installed by either building from source, or downloading
 a prebuilt binary.
 
-## From Source
+### From Source
 
 Gomarkwiki is written in the Go programming language and you need at least Go
 version 1.20. To build gomarkwiki from source, execute the following steps:
@@ -139,7 +143,7 @@ $ make build
 
 This builds gomarkwiki and places the executable in the `./build` directory.
 
-## Binaries
+### Binaries
 
 You can download the latest stable release versions of gomarkwiki from the
 [gomarkwiki releases page](https://github.com/stalexan/gomarkwiki/releases/latest).
@@ -163,7 +167,7 @@ sub   rsa3072 2023-04-29 [S] [expires: 2024-04-28]
       AAAB32D28EB8110409B4B33CD856897AA7E38BD1
 ```
 
-# Reproducible Builds
+## Reproducible Builds
 
 The binaries released with each gomarkwiki version are
 [reproducible](https://reproducible-builds.org/), which means you can reproduce
@@ -182,7 +186,7 @@ $ gomarkwiki --version
 gomarkwiki v0.2.0 compiled with go1.20.5 on linux/amd64
 ```
 
-## With Docker
+### With Docker
 
 To do a reproducible build with Docker, we first create a Docker image by
 running `build-image.sh` in the
@@ -204,7 +208,7 @@ binaries that are created in `~/tmp/build-output`:
 ./build-release.sh ~/gomarkwiki ~/tmp/build-output v0.2.0
 ```
 
-## Without Docker
+### Without Docker
 
 A reproducible build can also be done manually, without Docker. Here we perform
 the same steps as done in the build scripts, but for just one executable. 
@@ -265,7 +269,7 @@ gomarkwiki_v0.2.0_linux_amd64.bz2: OK
 
 The SHA256 sums are the same, and we've done a reproducible build.
 
-# License
+## License
 
 Gomarkwiki is licensed under the [MIT License](https://spdx.org/licenses/MIT.html).
 You can find the complete text in

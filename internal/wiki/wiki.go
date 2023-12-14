@@ -28,9 +28,10 @@ import (
 )
 
 var markdown goldmark.Markdown
-var htmlHeaderTemplate *template.Template
+var defaultHtmlHeaderTemplate *template.Template
+var githubHtmlHeaderTemplate *template.Template
 
-//go:embed static/style.css
+//go:embed static/style.css static/github-style.css
 var embeddedFileSystem embed.FS
 
 // Times to wait while waiting for changes to finish.
@@ -40,9 +41,9 @@ const MAX_CHANGE_WAIT = 5000 // milliseconds
 // Max time before regenerating wiki while watching for changes.
 const MAX_REGEN_INTERVAL = 10 // minutes
 
-// htmlHeaderTemplateText is the text used to create the HTML template that
-// generates the start of each HTML file.
-const htmlHeaderTemplateText = `<!doctype html>
+// defaultHtmlHeaderTemplateText is the text used to create the HTML template that
+// generates the start of each HTML file that uses default styles.
+const defaultHtmlHeaderTemplateText = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
@@ -54,6 +55,32 @@ const htmlHeaderTemplateText = `<!doctype html>
 <link href="{{.RootRelPath}}local.css" rel="stylesheet" />
 </head>
 <body>
+`
+
+// githubHtmlHeaderTemplateText is the text used to create the HTML template that
+// generates the start of each HTML file that uses GitHub styles.
+const githubHtmlHeaderTemplateText = `<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name=generator content="gomarkwiki {{.Version}}">
+<title>{{.Title}}</title>
+<link rel="icon" href="{{.RootRelPath}}favicon.ico" type="image/x-icon" />
+<link href="{{.RootRelPath}}github-style.css" rel="stylesheet" />
+<link href="{{.RootRelPath}}github-local.css" rel="stylesheet" />
+<style>
+	.markdown-body {
+		box-sizing: border-box;
+		min-width: 200px;
+		max-width: 980px;
+		margin: 0 auto;
+		padding: 45px;
+	}
+
+	@media (max-width: 767px) {
+		.markdown-body {
+			padding: 15px;
+		}
+	}
+</style>
+<article class="markdown-body">
 `
 
 // templateData holds the values used to instantiate HTML from the HTML header template.
@@ -76,8 +103,9 @@ func init() {
 		),
 	)
 
-	// Create HTML header template.
-	htmlHeaderTemplate = template.Must(template.New("html").Parse(htmlHeaderTemplateText))
+	// Create HTML header templates.
+	defaultHtmlHeaderTemplate = template.Must(template.New("defaultHtml").Parse(defaultHtmlHeaderTemplateText))
+	githubHtmlHeaderTemplate = template.Must(template.New("githubHtml").Parse(githubHtmlHeaderTemplateText))
 }
 
 // Wiki stores data about a single wiki.
@@ -87,7 +115,7 @@ type Wiki struct {
 	ContentDir string // Content directory within source directory
 	DestDir    string // Dest directory where wiki will be generated
 
-	styleCssCopyNeeded bool // Whether style.css nees to be copied to dest
+	styleCssCopyNeeded bool // Whether CSS files needs to be copied to dest
 
 	subStrings [][2]string // Substitution strings. Each pair is the string to look for and what to replace it with.
 
@@ -237,11 +265,10 @@ func (wiki *Wiki) generate(regen, clean bool, version string) error {
 		return err
 	}
 
-	// Copy styles.css to destDir.
-	if err = wiki.copyStyleCss(); err != nil {
+	// Copy css files to destDir.
+	if err = wiki.copyCssFiles(relDestPaths); err != nil {
 		return err
 	}
-	relDestPaths["style.css"] = true
 
 	// Clean dest dir.
 	if clean {
@@ -368,6 +395,23 @@ func destIsOlder(sourceInfo fs.FileInfo, destPath string) bool {
 	return false
 }
 
+var gitHubDirective []byte = []byte("#[style(github)]")
+
+// checkForStyleDirective looks for the GitHub style directive on the first
+// line of `data`. Returns true if found and removes directive. Otherwise,
+// returns false.
+func checkForStyleDirective(data []byte) (bool, []byte) {
+	// Check for directive
+	hasDirective := false
+	if bytes.HasPrefix(data, gitHubDirective) {
+		hasDirective = true
+		// Trim off the directive and any whitespace.
+		data = data[len(gitHubDirective):]
+		data = bytes.TrimSpace(data)
+	}
+	return hasDirective, data
+}
+
 // generateHtml generates an HTML file from a markdown file.
 func (wiki Wiki) generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath string, regen bool, version string) (string, error) {
 	// Determine the output path for the HTML file. For example, if the markdown
@@ -396,6 +440,9 @@ func (wiki Wiki) generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath 
 		}
 	}
 
+	// Check for style directive.
+	useGitHubStyle, data := checkForStyleDirective(data)
+
 	// Make substituions.
 	data = wiki.makeSubstitions(data)
 
@@ -412,8 +459,14 @@ func (wiki Wiki) generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath 
 	// Generate the start of the HTML file using the template htmlHeaderTemplate.
 	html := &strings.Builder{}
 	title := filepath.Base(relPathNoExt) // Markdown file name without file extension
-	if err = htmlHeaderTemplate.Execute(html, templateData{title, version, rootRelPath}); err != nil {
-		return "", fmt.Errorf("failed to create HTML header for '%s': %v", outPath, err)
+	if useGitHubStyle {
+		if err = githubHtmlHeaderTemplate.Execute(html, templateData{title, version, rootRelPath}); err != nil {
+			return "", fmt.Errorf("failed to create GitHub HTML header for '%s': %v", outPath, err)
+		}
+	} else {
+		if err = defaultHtmlHeaderTemplate.Execute(html, templateData{title, version, rootRelPath}); err != nil {
+			return "", fmt.Errorf("failed to create default HTML header for '%s': %v", outPath, err)
+		}
 	}
 
 	// Generate the body of the HTML from markdown.
@@ -422,7 +475,11 @@ func (wiki Wiki) generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath 
 	}
 
 	// Generate end of HTML file.
-	html.WriteString("</body>\n</html>")
+	if useGitHubStyle {
+		html.WriteString("</article>")
+	} else {
+		html.WriteString("</body>\n</html>")
+	}
 
 	// Create output directory if necessary.
 	if err = os.MkdirAll(outDir, 0755); err != nil {
@@ -587,24 +644,46 @@ func deleteEmptyDirectories(path string) error {
 	return nil
 }
 
-// copyStyleCss copies styles.css to dest dir.
-func (wiki *Wiki) copyStyleCss() error {
+// copyCssFile copies the embedded css `file` to dest dir.
+func (wiki *Wiki) copyCssFile(file string) error {
+	// Read file
+	var css []byte
+	var err error
+	sourcePath := fmt.Sprintf("static/%s", file)
+	if css, err = embeddedFileSystem.ReadFile(sourcePath); err != nil {
+		return fmt.Errorf("failed to read embedded file '%s': %v", sourcePath, err)
+	}
+
+	// Copy file
+	destPath := fmt.Sprintf("%s/%s", wiki.DestDir, file)
+	util.PrintVerbose("Copying '%s' to '%s'", sourcePath, destPath)
+	if err := copyToFile(destPath, bytes.NewReader(css)); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// copyCssFiles copies CSS files to dest dir.
+func (wiki *Wiki) copyCssFiles(relDestPaths map[string]bool) error {
 	// Is copy neeeded?
 	if !wiki.styleCssCopyNeeded {
 		return nil
 	}
 
-	// Copy style.css.
-	var styleCss []byte
-	var err error
-	util.PrintVerbose("Copying style.css to '%s'", wiki.DestDir)
-	if styleCss, err = embeddedFileSystem.ReadFile("static/style.css"); err != nil {
-		return fmt.Errorf("failed to read style.css: %v", err)
+	// Copy CSS files.
+	cssFiles := []string{"style.css", "github-style.css"}
+	for _, cssFile := range cssFiles {
+		if err := wiki.copyCssFile(cssFile); err != nil {
+			return err
+		}
+
+		// Don't delete css file even though it doesn't have a
+		// corresponding file in the source dir.
+		relDestPaths[cssFile] = true
 	}
-	styleCssPath := fmt.Sprintf("%s/style.css", wiki.DestDir)
-	if err := copyToFile(styleCssPath, bytes.NewReader(styleCss)); err != nil {
-		return err
-	}
+
+	// CSS files only need to be copied once per run.
 	wiki.styleCssCopyNeeded = false
 
 	return nil

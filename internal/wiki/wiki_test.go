@@ -12,11 +12,13 @@ import (
 const PACKAGE_DIR = "../.."
 const TMP_DIR = "tmp"
 const TESTDATA_DIR = "./testdata"
-const STYLES_PATH = "./static/style.css"
+const STYLE_PATH = "./static/style.css"
+const GITHUB_STYLE_PATH = "./static/github-style.css"
 
 var (
 	packageDir  string
-	stylesPath  string
+	stylePath  string
+	githubStylePath  string
 	tempDir     string
 	testDataDir string
 )
@@ -41,7 +43,8 @@ func TestMain(m *testing.M) {
 	testDataDir = TESTDATA_DIR
 
 	// Find style.css.
-	stylesPath = STYLES_PATH
+	stylePath = STYLE_PATH
+	githubStylePath = GITHUB_STYLE_PATH
 
 	// Run the tests.
 	code := m.Run()
@@ -93,8 +96,11 @@ func TestA01GenerateTinyWiki(t *testing.T) {
 	if err := copyDir(expectedOutputSourceDir, expectedOutputDir); err != nil {
 		t.Fatalf("Failed to create expected output dir %s: %v", expectedOutputDir, err)
 	}
-	if err := copyFile(stylesPath, expectedOutputDir); err != nil {
+	if err := copyFile(stylePath, expectedOutputDir); err != nil {
 		t.Fatalf("Failed to create style.css for expected output dir %s: %v", expectedOutputDir, err)
+	}
+	if err := copyFile(githubStylePath, expectedOutputDir); err != nil {
+		t.Fatalf("Failed to create github-style.css for expected output dir %s: %v", expectedOutputDir, err)
 	}
 
 	// Check output.

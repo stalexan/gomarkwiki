@@ -666,21 +666,23 @@ func (wiki *Wiki) copyCssFile(file string) error {
 
 // copyCssFiles copies CSS files to dest dir.
 func (wiki *Wiki) copyCssFiles(relDestPaths map[string]bool) error {
+	// Don't delete css files even though they don't have a corresponding
+	// file in the source dir.
+	cssFiles := []string{"style.css", "github-style.css"}
+	for _, cssFile := range cssFiles {
+		relDestPaths[cssFile] = true
+	}
+
 	// Is copy neeeded?
 	if !wiki.styleCssCopyNeeded {
 		return nil
 	}
 
 	// Copy CSS files.
-	cssFiles := []string{"style.css", "github-style.css"}
 	for _, cssFile := range cssFiles {
 		if err := wiki.copyCssFile(cssFile); err != nil {
 			return err
 		}
-
-		// Don't delete css file even though it doesn't have a
-		// corresponding file in the source dir.
-		relDestPaths[cssFile] = true
 	}
 
 	// CSS files only need to be copied once per run.

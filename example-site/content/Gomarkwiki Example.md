@@ -3,3 +3,4 @@
 * [Electronics](Electronics/Electronics.html)
 * Go Programming: [Language](DevGo/Language.html)
 * Spanish: [Verbs](Spanish/Verbs.html)
+* Misc: [GithubStyleExample](Misc/GithubStyleExample.html)

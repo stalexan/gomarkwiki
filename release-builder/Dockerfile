@@ -17,7 +17,7 @@ RUN set -eux; \
 
 # Install Go.
 RUN set -eux; \
-    GO_URL="https://dl.google.com/go/go${GO_VERSION}.linux-amd64.tar.gz"; \
+    GO_URL="https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"; \
     wget -O go.tar.gz.asc "${GO_URL}.asc"; \
     wget -O go.tar.gz "$GO_URL" --progress=dot:giga; \
     GNUPGHOME="$(mktemp -d)"; export GNUPGHOME; \

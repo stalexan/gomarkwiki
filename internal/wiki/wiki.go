@@ -520,10 +520,18 @@ func (wiki Wiki) copyFileToDest(sourceInfo fs.FileInfo, sourcePath, sourceRelPat
 		return nil
 	}
 
+	// Create dest dir if it doesn't exist.
+	destDirPath := filepath.Dir(destPath)
+	var err error
+	if _, err = os.Stat(destDirPath); os.IsNotExist(err) {
+		if err = os.MkdirAll(destDirPath, os.ModePerm); err != nil {
+			return fmt.Errorf("failed to create dest dir '%s': %v", destDirPath, err)
+		}
+	}
+
 	// Copy file.
 	util.PrintVerbose("Copying '%s'", sourceRelPath)
 	var source *os.File
-	var err error
 	if source, err = os.Open(sourcePath); err != nil {
 		if os.IsNotExist(err) {
 			util.PrintVerbose("'%s' was not copied to dest because it no longer exists", sourcePath)

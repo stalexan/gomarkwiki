@@ -30,5 +30,7 @@ set -x
 export DOCKER_CONTENT_TRUST=1
 
 # Build
-docker build --build-arg GO_VERSION=${GO_VERSION} --pull -t $IMAGE .
+CACHING="--pull --no-cache"
+#CACHING=""
+docker build $CACHING --build-arg GO_VERSION=${GO_VERSION} --pull -t $IMAGE .
 

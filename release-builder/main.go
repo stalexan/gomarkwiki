@@ -181,6 +181,7 @@ func extractTar(tarPath string) {
 	run("tar", "xz", "--strip-components=1", "-f", tarPath, "-C", EXTRACTED_SOURCE_DIR)
 }
 
+/* All targets:
 var buildTargets = map[string][]string{
 	"darwin":  {"amd64", "arm64"},
 	"freebsd": {"386", "amd64", "arm"},
@@ -189,6 +190,11 @@ var buildTargets = map[string][]string{
 	"openbsd": {"386", "amd64"},
 	"windows": {"386", "amd64"},
 	"solaris": {"amd64"},
+}
+*/
+var buildTargets = map[string][]string{
+	"linux":   {"amd64", "arm64"},
+	"windows": {"386", "amd64"},
 }
 
 func runBuild(version string) {

@@ -9,12 +9,6 @@ fast, and gives it support for
 [CommonMark](https://en.wikipedia.org/wiki/Markdown#Standardization) as well as
 [GitHub Flavored Markdown](https://github.github.com/gfm) (GFM), such as tables. 
 
-Here's a simple example site generated with 
-Gomarkwiki: [Example](https://www.alexan.org/gomarkwiki-example/Gomarkwiki%20Example.html).
-The site is just a few pages from personal wikis I keep.
-The Markdown used to create it in the directory
-[example-site](https://github.com/stalexan/gomarkwiki/tree/main/example-site).
-
 ## Usage
 
 ```
@@ -100,16 +94,15 @@ OPTIONS
 
 ## Examples
 
-To generate the HTML for the example site found in the
-[example-site](https://github.com/stalexan/gomarkwiki/tree/main/example-site)
-directory, assuming this repo has been cloned to ~/gomarkwiki and the HTML
-should be saved to ~/wikis-html/example-site:
+Generate the HTML for an example site with markdown in `~/example-site` and
+save generated HTML to `~/wikis-html/example-site`:
 
 ```
-gomarkwiki ~/gomarkwiki/example-site ~/wikis-html/example-site
+gomarkwiki ~/example-site ~/wikis-html/example-site
 ```
 
-Or to generate multiple wikis, say we have the CSV file `/etc/gomarkwiki/wikis.csv` with:
+Or to generate multiple wikis using the CSV file `/etc/gomarkwiki/wikis.csv`
+that has:
 
 ```
 /path/to/src/wiki1,/path/to/dest/wiki1
@@ -117,7 +110,7 @@ Or to generate multiple wikis, say we have the CSV file `/etc/gomarkwiki/wikis.c
 /path/to/src/wiki3,/path/to/dest/wiki3
 ```
 
-We can generate all three wikis in one pass, clean any files from the dest
+To generate all three wikis in one pass, clean any files from the dest
 directories that don't have corresponding files in their source directory, and
 remain running to watch for changes and regenerate destination files with:
 
@@ -174,7 +167,7 @@ The binaries released with each gomarkwiki version are
 a byte identical version from the source code for that release.
 
 Reproducible builds can be done with either Docker using the release build
-scripts found in the [release-builder](https://github.com/stalexan/gomarkwiki/tree/main/example-site)
+scripts found in the [release-builder](https://github.com/stalexan/gomarkwiki/tree/main/release-builder)
 directory, or without Docker by manually doing what the scripts do.
 
 In either case, the first step is to determine which version of Go was used to

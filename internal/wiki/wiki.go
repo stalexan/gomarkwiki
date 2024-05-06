@@ -61,6 +61,7 @@ const defaultHtmlHeaderTemplateText = `<!doctype html>
 // generates the start of each HTML file that uses GitHub styles.
 const githubHtmlHeaderTemplateText = `<meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name=generator content="gomarkwiki {{.Version}}">
+<meta charset="utf-8" />
 <title>{{.Title}}</title>
 <link rel="icon" href="{{.RootRelPath}}favicon.ico" type="image/x-icon" />
 <link href="{{.RootRelPath}}github-style.css" rel="stylesheet" />

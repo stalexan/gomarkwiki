@@ -132,7 +132,7 @@ func NewWiki(sourceDir, destDir string) (*Wiki, error) {
 		DestDir:            destDir,
 		styleCssCopyNeeded: true,
 		subStrings:         nil,
-		subsPath:			"",
+		subsPath:           "",
 		ignore:             nil,
 	}
 
@@ -718,19 +718,27 @@ func (wiki *Wiki) watch(clean bool, version string) error {
 	for {
 		// Wait for when wiki needs to be updated.
 		var err error
-		if snapshot, err = wiki.waitForWhenGenerateNeeded(clean, version, snapshot); err != nil {
+		var regen bool
+		if snapshot, regen, err = wiki.waitForWhenGenerateNeeded(clean, version, snapshot); err != nil {
 			return fmt.Errorf("failed waiting to update %s wiki: %v", wiki.SourceDir, err)
 		}
 
+		// Reload substition strings if the substition strings file has changed.
+		if regen {
+			util.PrintVerbose("Reloading substitution strings from '%s'", wiki.subsPath)
+			if err := wiki.loadSubstitutionStrings(); err != nil {
+				return fmt.Errorf("failed to reload substition strings file: %v", err)
+			}
+		}
+
 		// Update wiki.
-		// SEANN: Set regen to true of substition-strings.csv has changed.
-		if err = wiki.generate(false, clean, version); err != nil {
+		if err = wiki.generate(regen, clean, version); err != nil {
 			return fmt.Errorf("failed to update %s wiki: %v", wiki.SourceDir, err)
 		}
 	}
 }
 
-func (wiki *Wiki) waitForWhenGenerateNeeded(clean bool, version string, snapshot []fileSnapshot) ([]fileSnapshot, error) {
+func (wiki *Wiki) waitForWhenGenerateNeeded(clean bool, version string, snapshot []fileSnapshot) ([]fileSnapshot, bool, error) {
 	// Create timeout context so that a generate is done at least every MAX_REGEN_INTERVAL minutes.
 	ctx := context.Background()
 	ctx, cancelCtx := context.WithTimeout(ctx, MAX_REGEN_INTERVAL*time.Minute)
@@ -748,10 +756,16 @@ func (wiki *Wiki) waitForWhenGenerateNeeded(clean bool, version string, snapshot
 		close(doneChan)
 	}()
 
-	// Create a chan to return snapshot.
-	snapshotChan := make(chan []fileSnapshot, 1)
+	// Define the result struct
+	type result struct {
+		snapshot []fileSnapshot
+		regen    bool
+	}
+
+	// Create a chan to return snapshot and regen value.
+	resultChan := make(chan result, 1)
 	defer func() {
-		close(snapshotChan)
+		close(resultChan)
 	}()
 
 	go func() {
@@ -762,7 +776,8 @@ func (wiki *Wiki) waitForWhenGenerateNeeded(clean bool, version string, snapshot
 
 		// Watch for changes.
 		var err error
-		if err = watchForChangeEvent(ctx, wiki.ContentDir, wiki.subsPath, clean, version, snapshot); err != nil {
+		var regen bool
+		if regen, err = watchForChangeEvent(ctx, wiki.ContentDir, wiki.subsPath, clean, version, snapshot); err != nil {
 			errorChan <- fmt.Errorf("watch for change event in %s failed: %v", wiki.SourceDir, err)
 			return
 		}
@@ -782,13 +797,15 @@ func (wiki *Wiki) waitForWhenGenerateNeeded(clean bool, version string, snapshot
 		}
 
 		// We're exiting normally.
-		snapshotChan <- newSnapshot
+		resultChan <- result{newSnapshot, regen}
 	}()
 
 	// Wait on results.
 	var err error
+	var res result
 	select {
-	case snapshot = <-snapshotChan:
+	case res = <-resultChan:
+		snapshot = res.snapshot
 	case err = <-errorChan:
 	case <-ctx.Done():
 		if ctx.Err() == context.DeadlineExceeded {
@@ -796,10 +813,10 @@ func (wiki *Wiki) waitForWhenGenerateNeeded(clean bool, version string, snapshot
 		}
 	}
 
-	// Wait for goroutine to finish, so that the chans it writes to aren't closed before any final writes.
+	// Wait for goroutine to finish, so that the chan it writes to isn't closed before any final writes.
 	<-doneChan
 
-	return snapshot, err
+	return snapshot, res.regen, err
 }
 
 // watchDirRecursive sets up watches on the specified directory and all subdirectories recursively.
@@ -954,34 +971,34 @@ func waitForChangesToFinish(ctx context.Context, dir string) ([]fileSnapshot, er
 }
 
 // watchForChangeEvent watches for a change to the wiki content.
-func watchForChangeEvent(ctx context.Context, contentDir string, subsPath string, clean bool, version string, snapshot []fileSnapshot) error {
+func watchForChangeEvent(ctx context.Context, contentDir string, subsPath string, clean bool, version string, snapshot []fileSnapshot) (bool, error) {
 	// Create and initialize watcher.
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		return fmt.Errorf("failed to create watcher for '%s': %v", contentDir, err)
+		return false, fmt.Errorf("failed to create watcher for '%s': %v", contentDir, err)
 	}
 	defer watcher.Close()
 	if err = watchDirRecursive(contentDir, watcher); err != nil {
-		return fmt.Errorf("failed to initialize watcher for %s: %v", contentDir, err)
+		return false, fmt.Errorf("failed to initialize watcher for %s: %v", contentDir, err)
 	}
-	if subsPath != ""  {
- 		// Watch substitution-strings.csv too.
- 		err := watcher.Add(subsPath)
- 		if err != nil {
- 			return fmt.Errorf("failed to watch '%s': '%s'", subsPath, err)
- 		}
- 	}
+	if subsPath != "" {
+		// Watch substitution-strings.csv too.
+		err := watcher.Add(subsPath)
+		if err != nil {
+			return false, fmt.Errorf("failed to watch '%s': '%s'", subsPath, err)
+		}
+	}
 
 	// Make sure files haven't changed in between when wiki update started and new watch started.
 	if snapshot != nil {
 		newSnapshot, err := takeFilesSnapshot(contentDir)
 		if err != nil {
-			return fmt.Errorf("failed to take new snapshot for %s: %v", contentDir, err)
+			return false, fmt.Errorf("failed to take new snapshot for %s: %v", contentDir, err)
 		}
 		if !filesSnapshotsAreEqual(snapshot, newSnapshot) {
 			// Files have changed. Start a new update.
 			util.PrintVerbose("About to watch for changes but file snapshots differ. Starting a new update.")
-			return nil
+			return false, nil
 		}
 	}
 
@@ -989,21 +1006,26 @@ func watchForChangeEvent(ctx context.Context, contentDir string, subsPath string
 	select {
 	case event, ok := <-watcher.Events:
 		if !ok {
-			return fmt.Errorf("watcher unexpectedly closed while watching '%s' %v", contentDir, err)
+			return false, fmt.Errorf("watcher unexpectedly closed while watching '%s' %v", contentDir, err)
 		}
 		util.PrintDebug("Watcher event detected for %s: %v", contentDir, event)
- 		if subsPath != "" && event.Has(fsnotify.Write) && filepath.Clean(event.Name) == subsPath {
- 			// SEANN: Distinguish substitution-strings.csv change from other changes.
- 			fmt.Println("substitution-strings.csv changed")
-         }
-		return nil
+
+		// Regenerate all files if the substitution strings file has changed.
+		regen := subsPath != "" &&
+			(event.Has(fsnotify.Write) || event.Has(fsnotify.Rename)) &&
+			filepath.Clean(event.Name) == subsPath
+		if regen {
+			util.PrintVerbose("Substitution strings file '%s' write seen", subsPath)
+		}
+
+		return regen, nil
 	case err, ok := <-watcher.Errors:
 		if !ok {
-			return fmt.Errorf("failed to read watcher error for %s", contentDir)
+			return false, fmt.Errorf("failed to read watcher error for %s", contentDir)
 		}
-		return fmt.Errorf("watcher error for %s: %v", contentDir, err)
+		return false, fmt.Errorf("watcher error for %s: %v", contentDir, err)
 	case <-ctx.Done():
 		// Regen timer has expired.
-		return nil
+		return false, nil
 	}
 }

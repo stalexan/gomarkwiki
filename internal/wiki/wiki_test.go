@@ -16,11 +16,11 @@ const STYLE_PATH = "./static/style.css"
 const GITHUB_STYLE_PATH = "./static/github-style.css"
 
 var (
-	packageDir  string
-	stylePath  string
-	githubStylePath  string
-	tempDir     string
-	testDataDir string
+	packageDir      string
+	stylePath       string
+	githubStylePath string
+	tempDir         string
+	testDataDir     string
 )
 
 func messageFatal(message string) {

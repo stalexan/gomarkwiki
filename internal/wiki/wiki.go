@@ -119,6 +119,7 @@ type Wiki struct {
 	styleCssCopyNeeded bool // Whether CSS files needs to be copied to dest
 
 	subStrings [][2]string // Substitution strings. Each pair is the string to look for and what to replace it with.
+	subsPath   string      // Path to substitution strings file.
 
 	ignore []*regexp.Regexp // Which files to ingore
 }
@@ -131,6 +132,7 @@ func NewWiki(sourceDir, destDir string) (*Wiki, error) {
 		DestDir:            destDir,
 		styleCssCopyNeeded: true,
 		subStrings:         nil,
+		subsPath:			"",
 		ignore:             nil,
 	}
 
@@ -141,8 +143,8 @@ func NewWiki(sourceDir, destDir string) (*Wiki, error) {
 		}
 	}
 
-	// Load substition strings.
-	if err := wiki.loadSubstitionStrings(); err != nil {
+	// Load substitution strings.
+	if err := wiki.loadSubstitutionStrings(); err != nil {
 		return nil, err
 	}
 
@@ -154,22 +156,30 @@ func NewWiki(sourceDir, destDir string) (*Wiki, error) {
 	return &wiki, nil
 }
 
-// loadSubstitionStrings loads substition strings for a wiki, from its substition-strings.csv
-func (wiki *Wiki) loadSubstitionStrings() error {
-	// Is there a substition strings file?
-	const subsFileName = "substition-strings.csv"
-	subsPath := filepath.Join(wiki.SourceDir, subsFileName)
+// loadSubstitutionStrings loads substitution strings for a wiki, from its substitution-strings.csv
+func (wiki *Wiki) loadSubstitutionStrings() error {
+	// Start with no substitution strings.
+	wiki.subStrings = nil
+	wiki.subsPath = ""
+
+	// Is there a substitution strings file?
+	const subsFileName = "substitution-strings.csv"
+	candidateSubsPath := filepath.Join(wiki.SourceDir, subsFileName)
 	var pairs [][2]string
 	var err error
-	if pairs, err = util.LoadStringPairs(subsPath); err != nil {
-		return fmt.Errorf("failed to load substition strings from '%s': %v", subsPath, err)
+	if pairs, err = util.LoadStringPairs(candidateSubsPath); err != nil {
+		return fmt.Errorf("failed to load substitution strings from '%s': %v", candidateSubsPath, err)
+	}
+	if pairs != nil {
+		// There's a substitution strings file. Remember its path.
+		wiki.subsPath = filepath.Clean(candidateSubsPath)
 	}
 	if len(pairs) == 0 {
-		// There's either no substituion strings file or the file is empty.
+		// There's either no substitution strings file or the file is empty.
 		return nil
 	}
 
-	// Save substitions.
+	// Save substitutions.
 	for _, pair := range pairs {
 		placeholder := pair[0]
 		if len(placeholder) == 0 {
@@ -183,8 +193,8 @@ func (wiki *Wiki) loadSubstitionStrings() error {
 	return nil
 }
 
-// makeSubstitions makes string substitions in data.
-func (wiki Wiki) makeSubstitions(data []byte) []byte {
+// makeSubstitutions makes string substitutions in data.
+func (wiki Wiki) makeSubstitutions(data []byte) []byte {
 	for _, pair := range wiki.subStrings {
 		data = bytes.ReplaceAll(data, []byte(pair[0]), []byte(pair[1]))
 	}
@@ -444,8 +454,8 @@ func (wiki Wiki) generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath 
 	// Check for style directive.
 	useGitHubStyle, data := checkForStyleDirective(data)
 
-	// Make substituions.
-	data = wiki.makeSubstitions(data)
+	// Make substitutions.
+	data = wiki.makeSubstitutions(data)
 
 	// Determine relative path from the file being generated to the dest dir. For
 	// example if the file being generated is /wiki-html/Foo/Bar.html and the
@@ -713,6 +723,7 @@ func (wiki *Wiki) watch(clean bool, version string) error {
 		}
 
 		// Update wiki.
+		// SEANN: Set regen to true of substition-strings.csv has changed.
 		if err = wiki.generate(false, clean, version); err != nil {
 			return fmt.Errorf("failed to update %s wiki: %v", wiki.SourceDir, err)
 		}
@@ -751,7 +762,7 @@ func (wiki *Wiki) waitForWhenGenerateNeeded(clean bool, version string, snapshot
 
 		// Watch for changes.
 		var err error
-		if err = watchForChangeEvent(ctx, wiki.ContentDir, clean, version, snapshot); err != nil {
+		if err = watchForChangeEvent(ctx, wiki.ContentDir, wiki.subsPath, clean, version, snapshot); err != nil {
 			errorChan <- fmt.Errorf("watch for change event in %s failed: %v", wiki.SourceDir, err)
 			return
 		}
@@ -943,7 +954,7 @@ func waitForChangesToFinish(ctx context.Context, dir string) ([]fileSnapshot, er
 }
 
 // watchForChangeEvent watches for a change to the wiki content.
-func watchForChangeEvent(ctx context.Context, contentDir string, clean bool, version string, snapshot []fileSnapshot) error {
+func watchForChangeEvent(ctx context.Context, contentDir string, subsPath string, clean bool, version string, snapshot []fileSnapshot) error {
 	// Create and initialize watcher.
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -953,6 +964,13 @@ func watchForChangeEvent(ctx context.Context, contentDir string, clean bool, ver
 	if err = watchDirRecursive(contentDir, watcher); err != nil {
 		return fmt.Errorf("failed to initialize watcher for %s: %v", contentDir, err)
 	}
+	if subsPath != ""  {
+ 		// Watch substitution-strings.csv too.
+ 		err := watcher.Add(subsPath)
+ 		if err != nil {
+ 			return fmt.Errorf("failed to watch '%s': '%s'", subsPath, err)
+ 		}
+ 	}
 
 	// Make sure files haven't changed in between when wiki update started and new watch started.
 	if snapshot != nil {
@@ -974,6 +992,10 @@ func watchForChangeEvent(ctx context.Context, contentDir string, clean bool, ver
 			return fmt.Errorf("watcher unexpectedly closed while watching '%s' %v", contentDir, err)
 		}
 		util.PrintDebug("Watcher event detected for %s: %v", contentDir, event)
+ 		if subsPath != "" && event.Has(fsnotify.Write) && filepath.Clean(event.Name) == subsPath {
+ 			// SEANN: Distinguish substitution-strings.csv change from other changes.
+ 			fmt.Println("substitution-strings.csv changed")
+         }
 		return nil
 	case err, ok := <-watcher.Errors:
 		if !ok {

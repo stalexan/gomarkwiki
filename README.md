@@ -51,12 +51,12 @@ DESCRIPTION
        A favicon can be placed in source_dir/content to give HTML pages
        a default icon. The filename should be favicon.ico.
 
-       String substitions can be made using string pairs in the file
-       source_dir/substition-strings.csv. Each line of substition-strings.csv
+       String substitutions can be made using string pairs in the file
+       source_dir/substitution-strings.csv. Each line of substitution-strings.csv
        is a comma separated pair of strings, with the string placeholder first,
-       followed by a comma, and then the string substition. Then anywhere
+       followed by a comma, and then the string substitution. Then anywhere
        {{placeholder}} is found in a Markdown file, the corresponding HTML file
-       have the substition instead. For example if substition-strings.csv has
+       have the substitution instead. For example if substitution-strings.csv has
        the line "FOOBAR,www.foobar.com" then any instance of {{FOOBAR}} in
        a Markdown file will result in www.foobar.com in the HTML file.
 
@@ -121,7 +121,7 @@ gomarkwiki -clean -watch -wikis /etc/gomarkwiki/wikis.csv
 ## Installation
 
 Gomarkwiki can be installed by either building from source, or downloading
-a prebuilt binary.
+a pre-built binary.
 
 ### From Source
 

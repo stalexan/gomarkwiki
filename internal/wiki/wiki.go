@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/stalexan/gomarkwiki/internal/util"
 )
@@ -28,6 +29,45 @@ type Wiki struct {
 
 // NewWiki constructs a new instance of Wiki.
 func NewWiki(sourceDir, destDir string) (*Wiki, error) {
+	// Resolve absolute paths for comparison
+	absSourceDir, err := filepath.Abs(sourceDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve absolute path of source directory '%s': %v", sourceDir, err)
+	}
+	absDestDir, err := filepath.Abs(destDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve absolute path of destination directory '%s': %v", destDir, err)
+	}
+
+	// Use EvalSymlinks to handle cases where one path might be a symlink to the other
+	evalSourceDir, err := filepath.EvalSymlinks(absSourceDir)
+	if err != nil {
+		// If EvalSymlinks fails, fall back to absSourceDir
+		evalSourceDir = absSourceDir
+	}
+	evalDestDir, err := filepath.EvalSymlinks(absDestDir)
+	if err != nil {
+		// If EvalSymlinks fails, fall back to absDestDir
+		evalDestDir = absDestDir
+	}
+
+	// Check that source and dest directories are not the same
+	if evalSourceDir == evalDestDir {
+		return nil, fmt.Errorf("source directory '%s' and destination directory '%s' are the same", sourceDir, destDir)
+	}
+
+	// Check that dest directory is not under source directory
+	relPath, err := filepath.Rel(evalSourceDir, evalDestDir)
+	if err != nil {
+		// If Rel fails, paths might be on different volumes (Windows), so they're not nested
+		// Continue without error in this case
+	} else {
+		// If relative path doesn't start with "..", dest is under source
+		if relPath != "." && !strings.HasPrefix(relPath, "..") {
+			return nil, fmt.Errorf("destination directory '%s' cannot be under source directory '%s'", destDir, sourceDir)
+		}
+	}
+
 	wiki := Wiki{
 		SourceDir:          sourceDir,
 		ContentDir:         filepath.Join(sourceDir, "content"),

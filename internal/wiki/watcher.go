@@ -66,7 +66,8 @@ type Watcher struct {
 	mu        sync.Mutex // Protects all fsWatcher access
 
 	// Current state
-	snapshot []fileSnapshot
+	snapshot    []fileSnapshot
+	subsModTime int64 // Last known modification time of substitution strings file
 
 	// Context management
 	ctx    context.Context
@@ -95,10 +96,15 @@ func NewWatcher(parentCtx context.Context, contentDir, subsPath, sourceDir strin
 	}
 
 	// Watch substitution strings file if provided
+	var subsModTime int64
 	if subsPath != "" {
 		if err := fsWatcher.Add(subsPath); err != nil {
 			fsWatcher.Close()
 			return nil, fmt.Errorf("failed to watch '%s': %v", subsPath, err)
+		}
+		// Record initial modification time of substitution strings file
+		if info, err := os.Stat(subsPath); err == nil {
+			subsModTime = info.ModTime().Unix()
 		}
 	}
 
@@ -106,12 +112,13 @@ func NewWatcher(parentCtx context.Context, contentDir, subsPath, sourceDir strin
 	ctx, cancel := context.WithCancel(parentCtx)
 
 	return &Watcher{
-		contentDir: contentDir,
-		subsPath:   subsPath,
-		sourceDir:  sourceDir,
-		fsWatcher:  fsWatcher,
-		ctx:        ctx,
-		cancel:     cancel,
+		contentDir:  contentDir,
+		subsPath:    subsPath,
+		sourceDir:   sourceDir,
+		fsWatcher:   fsWatcher,
+		subsModTime: subsModTime,
+		ctx:         ctx,
+		cancel:      cancel,
 	}, nil
 }
 
@@ -158,6 +165,10 @@ func (w *Watcher) WaitForChange() (*WatchResult, error) {
 		}
 		if !filesSnapshotsAreEqual(w.snapshot, newSnapshot) {
 			util.PrintVerbose("Files changed between generation cycles. Starting update.")
+
+			// Check if substitution strings file also changed
+			regen := w.checkSubsFileChanged()
+
 			// Files changed, wait for stability and return
 			stableSnapshot, err := w.waitForStability(ctx)
 			if err != nil {
@@ -165,7 +176,17 @@ func (w *Watcher) WaitForChange() (*WatchResult, error) {
 			}
 			return &WatchResult{
 				Snapshot: stableSnapshot,
-				Regen:    false,
+				Regen:    regen,
+				Timeout:  false,
+			}, nil
+		}
+
+		// Even if content files didn't change, check if substitution strings file changed
+		if w.checkSubsFileChanged() {
+			util.PrintVerbose("Substitution strings file changed between generation cycles. Starting update.")
+			return &WatchResult{
+				Snapshot: w.snapshot, // No content changes, so snapshot is still valid
+				Regen:    true,
 				Timeout:  false,
 			}, nil
 		}
@@ -352,10 +373,36 @@ func (w *Watcher) waitForStability(ctx context.Context) ([]fileSnapshot, error) 
 	return res.snapshot, nil
 }
 
+// checkSubsFileChanged checks if the substitution strings file has been modified
+// since it was last recorded. Returns true if the file changed, and updates
+// the stored modification time.
+func (w *Watcher) checkSubsFileChanged() bool {
+	if w.subsPath == "" {
+		return false
+	}
+
+	info, err := os.Stat(w.subsPath)
+	if err != nil {
+		// File might have been deleted or is inaccessible
+		// Don't update mod time, but don't trigger regen either
+		return false
+	}
+
+	currentModTime := info.ModTime().Unix()
+	if currentModTime != w.subsModTime {
+		w.subsModTime = currentModTime
+		return true
+	}
+
+	return false
+}
+
 // UpdateSnapshot updates the internal snapshot state.
 // This should be called after successful generation.
 func (w *Watcher) UpdateSnapshot(snapshot []fileSnapshot) {
 	w.snapshot = snapshot
+	// Also update substitution strings file mod time when snapshot is updated
+	w.checkSubsFileChanged()
 }
 
 // GetSnapshot returns the current snapshot.
@@ -402,6 +449,7 @@ func (wiki *Wiki) watch(ctx context.Context, clean bool, version string) error {
 
 		// Update snapshot
 		watcher.UpdateSnapshot(result.Snapshot)
+		// Note: UpdateSnapshot also updates subsModTime if subs file changed
 
 		// Reload substitution strings if needed
 		if result.Regen {
@@ -409,6 +457,8 @@ func (wiki *Wiki) watch(ctx context.Context, clean bool, version string) error {
 			if err := wiki.loadSubstitutionStrings(); err != nil {
 				return fmt.Errorf("failed to reload substitution strings file: %v", err)
 			}
+			// Ensure mod time is updated after reload
+			watcher.checkSubsFileChanged()
 		}
 
 		// Skip generation if this was just a timeout (periodic regen)

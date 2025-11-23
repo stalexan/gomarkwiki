@@ -63,7 +63,7 @@ type Watcher struct {
 
 	// Watcher instance (reused across cycles)
 	fsWatcher *fsnotify.Watcher
-	mu        sync.Mutex // Protects fsWatcher initialization
+	mu        sync.Mutex // Protects all fsWatcher access
 
 	// Current state
 	snapshot []fileSnapshot
@@ -121,7 +121,9 @@ func (w *Watcher) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.fsWatcher != nil {
-		return w.fsWatcher.Close()
+		err := w.fsWatcher.Close()
+		w.fsWatcher = nil // Prevent double-close and signal that watcher is closed
+		return err
 	}
 	return nil
 }
@@ -207,8 +209,19 @@ func (w *Watcher) WaitForChange() (*WatchResult, error) {
 //   - The watcher encounters an error (returns error)
 //   - The context times out (returns false, caller handles timeout)
 func (w *Watcher) waitForEvent(ctx context.Context) (bool, error) {
+	// Get references to channels while holding the lock to prevent
+	// concurrent Close() from causing a race condition
+	w.mu.Lock()
+	if w.fsWatcher == nil {
+		w.mu.Unlock()
+		return false, fmt.Errorf("watcher closed while waiting for event in '%s'", w.contentDir)
+	}
+	eventsChan := w.fsWatcher.Events
+	errorsChan := w.fsWatcher.Errors
+	w.mu.Unlock()
+
 	select {
-	case event, ok := <-w.fsWatcher.Events:
+	case event, ok := <-eventsChan:
 		if !ok {
 			return false, fmt.Errorf("watcher unexpectedly closed while watching '%s'", w.contentDir)
 		}
@@ -224,7 +237,7 @@ func (w *Watcher) waitForEvent(ctx context.Context) (bool, error) {
 
 		return regen, nil
 
-	case err, ok := <-w.fsWatcher.Errors:
+	case err, ok := <-errorsChan:
 		if !ok {
 			return false, fmt.Errorf("failed to read watcher error for %s", w.contentDir)
 		}

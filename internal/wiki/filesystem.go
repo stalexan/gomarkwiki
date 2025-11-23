@@ -45,14 +45,17 @@ func destIsOlder(sourceInfo fs.FileInfo, destPath string) bool {
 }
 
 // copyToFile copies source to the file at destPath, overwriting destPath if it exists.
-func copyToFile(destPath string, source io.Reader) error {
+func copyToFile(destPath string, source io.Reader) (err error) {
 	// Create and open dest file. Truncate it if it exists.
 	var destFile *os.File
-	var err error
 	if destFile, err = os.Create(destPath); err != nil {
 		return fmt.Errorf("failed to open file '%s': %v", destPath, err)
 	}
-	defer destFile.Close()
+	defer func() {
+		if closeErr := destFile.Close(); closeErr != nil && err == nil {
+			err = fmt.Errorf("failed to close '%s': %v", destPath, closeErr)
+		}
+	}()
 
 	// Copy source to destFile.
 	if _, err = io.Copy(destFile, source); err != nil {

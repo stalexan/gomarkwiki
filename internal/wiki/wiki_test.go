@@ -1,6 +1,7 @@
 package wiki
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -86,7 +87,7 @@ func TestA01GenerateTinyWiki(t *testing.T) {
 	}
 
 	// Generate wiki
-	if err = theWiki.Generate(true, false, false, "test"); err != nil {
+	if err = theWiki.Generate(context.Background(), true, false, false, "test"); err != nil {
 		t.Fatalf("Error generating wiki: %v", err)
 	}
 

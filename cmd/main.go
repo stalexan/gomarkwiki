@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -155,25 +156,33 @@ func main() {
 // generateWikis generates the wikis and then optionally watch watches for
 // changes in each wiki to regenerate files on the fly.
 func generateWikis(wikis []*wiki.Wiki, regen, clean, watch bool, version string) error {
+	// Create context for cancellation
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel() // Ensure cleanup on return
+
 	// Create channels to watch for completions, errors, and the terminate signal.
 	doneChan := make(chan struct{})
-	errorChan := make(chan error)
+	errorChan := make(chan error, len(wikis)) // Buffered to prevent blocking
 	termChan := make(chan os.Signal, 1)
 	signal.Notify(termChan, os.Interrupt, syscall.SIGTERM)
-	defer func() {
-		close(doneChan)
-		close(errorChan)
-		close(termChan)
-	}()
 
 	// Define worker function.
 	worker := func(wiki *wiki.Wiki) {
-		// Generate wiki.
-		if err := wiki.Generate(regen, clean, watch, version); err != nil {
-			errorChan <- err
+		// Generate wiki with context.
+		if err := wiki.Generate(ctx, regen, clean, watch, version); err != nil {
+			select {
+			case errorChan <- err:
+			case <-ctx.Done():
+			}
 			return
 		}
-		doneChan <- struct{}{}
+		// Only signal done if not watching (watching workers never complete normally)
+		if !watch {
+			select {
+			case doneChan <- struct{}{}:
+			case <-ctx.Done():
+			}
+		}
 	}
 
 	// Start workers.
@@ -182,19 +191,34 @@ func generateWikis(wikis []*wiki.Wiki, regen, clean, watch bool, version string)
 	}
 
 	// Watch for completions, errors, and terminate signal.
-	workersCount := len(wikis)
-	var err error
-	for workersCount > 0 && err == nil {
+	if watch {
+		// When watching, workers never complete normally - only wait for errors or termination
 		select {
-		case <-doneChan:
-			workersCount--
-		case err = <-errorChan:
+		case err := <-errorChan:
+			cancel() // Cancel all workers
 			return err
 		case <-termChan:
 			fmt.Println("Terminate signal received. Exiting...")
+			cancel() // Cancel all workers
 			return nil
 		}
+	} else {
+		// When not watching, wait for all workers to complete
+		workersCount := len(wikis)
+		var err error
+		for workersCount > 0 && err == nil {
+			select {
+			case <-doneChan:
+				workersCount--
+			case err = <-errorChan:
+				cancel() // Cancel all workers
+				return err
+			case <-termChan:
+				fmt.Println("Terminate signal received. Exiting...")
+				cancel() // Cancel all workers
+				return nil
+			}
+		}
+		return nil
 	}
-
-	return nil
 }

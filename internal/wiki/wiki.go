@@ -2,6 +2,7 @@
 package wiki
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -59,8 +60,13 @@ func NewWiki(sourceDir, destDir string) (*Wiki, error) {
 
 // Generate generates a wiki and then optionally watches for changes in the
 // wiki to regenerate files on the fly.
-func (wiki *Wiki) Generate(regen, clean, watch bool, version string) error {
+func (wiki *Wiki) Generate(ctx context.Context, regen, clean, watch bool, version string) error {
 	util.PrintVerbose("Generating wiki '%s' from '%s'", wiki.DestDir, wiki.SourceDir)
+
+	// Check for cancellation before starting
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 
 	// Generate wiki.
 	if err := wiki.generate(regen, clean, version); err != nil {
@@ -69,7 +75,11 @@ func (wiki *Wiki) Generate(regen, clean, watch bool, version string) error {
 
 	// Watch for changes and regenerate files on the fly.
 	if watch {
-		if err := wiki.watch(clean, version); err != nil {
+		if err := wiki.watch(ctx, clean, version); err != nil {
+			// Don't wrap context.Canceled errors
+			if err == context.Canceled {
+				return err
+			}
 			return fmt.Errorf("failed to watch '%s': %v", wiki.ContentDir, err)
 		}
 	}

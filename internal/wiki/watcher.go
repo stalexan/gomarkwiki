@@ -81,7 +81,8 @@ type WatchResult struct {
 }
 
 // NewWatcher creates a new Watcher instance for the given directories.
-func NewWatcher(contentDir, subsPath, sourceDir string) (*Watcher, error) {
+// The parent context is used for cancellation - when it's cancelled, the watcher will stop.
+func NewWatcher(parentCtx context.Context, contentDir, subsPath, sourceDir string) (*Watcher, error) {
 	fsWatcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create file watcher: %v", err)
@@ -101,7 +102,8 @@ func NewWatcher(contentDir, subsPath, sourceDir string) (*Watcher, error) {
 		}
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	// Create a child context that will be cancelled when the watcher is closed
+	ctx, cancel := context.WithCancel(parentCtx)
 
 	return &Watcher{
 		contentDir: contentDir,
@@ -349,11 +351,11 @@ func (w *Watcher) GetSnapshot() []fileSnapshot {
 }
 
 // watch watches for changes in the wiki content directory and regenerates files on the fly.
-func (wiki *Wiki) watch(clean bool, version string) error {
+func (wiki *Wiki) watch(ctx context.Context, clean bool, version string) error {
 	util.PrintVerbose("Watching for changes in '%s'", wiki.ContentDir)
 
-	// Create watcher
-	watcher, err := NewWatcher(wiki.ContentDir, wiki.subsPath, wiki.SourceDir)
+	// Create watcher with parent context
+	watcher, err := NewWatcher(ctx, wiki.ContentDir, wiki.subsPath, wiki.SourceDir)
 	if err != nil {
 		return fmt.Errorf("failed to create watcher: %v", err)
 	}
@@ -368,9 +370,20 @@ func (wiki *Wiki) watch(clean bool, version string) error {
 
 	// Main watch loop
 	for {
+		// Check for cancellation before waiting
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		// Wait for a change
 		result, err := watcher.WaitForChange()
 		if err != nil {
+			// Check if error is due to context cancellation
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			return fmt.Errorf("failed waiting to update %s wiki: %v", wiki.SourceDir, err)
 		}
 

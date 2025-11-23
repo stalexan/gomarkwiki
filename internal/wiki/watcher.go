@@ -15,12 +15,25 @@ import (
 	"github.com/stalexan/gomarkwiki/internal/util"
 )
 
-// Times to wait while waiting for changes to finish.
-const CHANGE_WAIT = 100      // milliseconds
-const MAX_CHANGE_WAIT = 5000 // milliseconds
+// Watcher timing configuration constants.
+// These control the file system change detection and stability waiting behavior.
+const (
+	// CHANGE_WAIT is the initial wait time before the first snapshot comparison
+	// when detecting file changes. This gives file operations time to complete
+	// before we start checking for stability.
+	CHANGE_WAIT = 100 * time.Millisecond
 
-// Max time before regenerating wiki while watching for changes.
-const MAX_REGEN_INTERVAL = 10 // minutes
+	// MAX_CHANGE_WAIT is the maximum wait time between snapshot comparisons
+	// during the exponential backoff algorithm. This caps the wait time to
+	// prevent excessive delays when waiting for rapid file operations to stabilize
+	// (e.g., bulk edits, git operations).
+	MAX_CHANGE_WAIT = 5000 * time.Millisecond
+
+	// MAX_REGEN_INTERVAL is the maximum time interval before forcing a periodic
+	// regeneration of the wiki, even if no file changes are detected. This ensures
+	// the wiki stays up-to-date even if file system events are missed.
+	MAX_REGEN_INTERVAL = 10 * time.Minute
+)
 
 // fileSnapshot records the name and modification time for a given file or directory.
 type fileSnapshot struct {
@@ -125,7 +138,7 @@ func (w *Watcher) Close() error {
 func (w *Watcher) WaitForChange() (*WatchResult, error) {
 	// Create timeout context for this cycle.
 	// Fresh timeout ensures periodic regeneration even without file changes.
-	ctx, cancel := context.WithTimeout(w.ctx, MAX_REGEN_INTERVAL*time.Minute)
+	ctx, cancel := context.WithTimeout(w.ctx, MAX_REGEN_INTERVAL)
 	defer cancel()
 
 	// Quick check: if files changed since last snapshot (race condition protection).
@@ -242,7 +255,7 @@ func (w *Watcher) waitForStability(ctx context.Context) ([]fileSnapshot, error) 
 		defer close(resultChan)
 
 		// Initial wait before first snapshot comparison
-		time.Sleep(CHANGE_WAIT * time.Millisecond)
+		time.Sleep(CHANGE_WAIT)
 
 		var snapshot1, snapshot2 []fileSnapshot
 		var err error
@@ -284,11 +297,11 @@ func (w *Watcher) waitForStability(ctx context.Context) ([]fileSnapshot, error) 
 			}
 
 			// Calculate wait time (exponential backoff: quadratic)
-			waitTime := waitPass * waitPass * CHANGE_WAIT
+			waitTime := time.Duration(waitPass*waitPass) * CHANGE_WAIT
 			if waitTime > MAX_CHANGE_WAIT {
 				waitTime = MAX_CHANGE_WAIT
 			}
-			util.PrintDebug("Waiting %d ms for %s", waitTime, w.contentDir)
+			util.PrintDebug("Waiting %d ms for %s", waitTime.Milliseconds(), w.contentDir)
 
 			// Wait with cancellation support
 			select {
@@ -299,7 +312,7 @@ func (w *Watcher) waitForStability(ctx context.Context) ([]fileSnapshot, error) 
 					resultChan <- result{snapshot: snapshot1}
 				}
 				return
-			case <-time.After(time.Duration(waitTime) * time.Millisecond):
+			case <-time.After(waitTime):
 			}
 
 			// Take after snapshot

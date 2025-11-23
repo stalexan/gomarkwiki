@@ -95,6 +95,9 @@ func (wiki Wiki) generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath 
 
 	// Generate the start of the HTML file using the template htmlHeaderTemplate.
 	html := &strings.Builder{}
+	// Extract title from file path. The html/template package automatically escapes
+	// all template variables (including this title) to prevent XSS attacks, so
+	// special characters in file paths are safely handled.
 	title := filepath.Base(relPathNoExt) // Markdown file name without file extension
 	if useGitHubStyle {
 		if err = githubHtmlHeaderTemplate.Execute(html, templateData{title, version, rootRelPath}); err != nil {

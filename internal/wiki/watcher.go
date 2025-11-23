@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -28,114 +29,362 @@ type fileSnapshot struct {
 	isDir     bool
 }
 
+// Watcher manages file system watching for a wiki content directory.
+// It encapsulates the complex state machine for detecting changes and
+// waiting for file operations to stabilize.
+//
+// State Machine:
+//   - Idle: Waiting for file changes (listening to fsnotify events)
+//   - EventDetected: A file change was detected
+//   - WaitingForStability: Comparing snapshots to ensure changes are complete
+//   - Ready: Changes stabilized, ready for regeneration
+//   - Timeout: Periodic regeneration timer expired
+//
+// The watcher reuses a single fsnotify.Watcher instance across cycles
+// for efficiency, and maintains snapshot state to detect rapid changes.
+type Watcher struct {
+	// Configuration
+	contentDir string
+	subsPath   string
+	sourceDir  string // For error messages
+
+	// Watcher instance (reused across cycles)
+	fsWatcher *fsnotify.Watcher
+	mu        sync.Mutex // Protects fsWatcher initialization
+
+	// Current state
+	snapshot []fileSnapshot
+
+	// Context management
+	ctx    context.Context
+	cancel context.CancelFunc
+}
+
+// WatchResult represents the result of waiting for a change.
+type WatchResult struct {
+	Snapshot []fileSnapshot // New snapshot after changes stabilized
+	Regen    bool           // Whether full regeneration is needed
+	Timeout  bool           // Whether the wait timed out
+}
+
+// NewWatcher creates a new Watcher instance for the given directories.
+func NewWatcher(contentDir, subsPath, sourceDir string) (*Watcher, error) {
+	fsWatcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create file watcher: %v", err)
+	}
+
+	// Set up recursive watching
+	if err := watchDirRecursive(contentDir, fsWatcher); err != nil {
+		fsWatcher.Close()
+		return nil, fmt.Errorf("failed to initialize watcher for %s: %v", contentDir, err)
+	}
+
+	// Watch substitution strings file if provided
+	if subsPath != "" {
+		if err := fsWatcher.Add(subsPath); err != nil {
+			fsWatcher.Close()
+			return nil, fmt.Errorf("failed to watch '%s': %v", subsPath, err)
+		}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	return &Watcher{
+		contentDir: contentDir,
+		subsPath:   subsPath,
+		sourceDir:  sourceDir,
+		fsWatcher:  fsWatcher,
+		ctx:        ctx,
+		cancel:     cancel,
+	}, nil
+}
+
+// Close releases resources associated with the watcher.
+func (w *Watcher) Close() error {
+	w.cancel()
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.fsWatcher != nil {
+		return w.fsWatcher.Close()
+	}
+	return nil
+}
+
+// WaitForChange waits for a file change event or timeout.
+// It returns a WatchResult indicating what happened and whether regeneration is needed.
+//
+// State machine transitions:
+//  1. [Optional] Check if files changed since last snapshot (race condition protection)
+//  2. Wait for file system event OR timeout (MAX_REGEN_INTERVAL)
+//  3. If event occurred, wait for changes to stabilize (exponential backoff)
+//  4. Return result with new snapshot and regeneration flag
+//
+// Each call creates a fresh timeout context to ensure periodic regeneration
+// happens at least every MAX_REGEN_INTERVAL minutes, even if no file changes occur.
+func (w *Watcher) WaitForChange() (*WatchResult, error) {
+	// Create timeout context for this cycle.
+	// Fresh timeout ensures periodic regeneration even without file changes.
+	ctx, cancel := context.WithTimeout(w.ctx, MAX_REGEN_INTERVAL*time.Minute)
+	defer cancel()
+
+	// Quick check: if files changed since last snapshot (race condition protection).
+	// This handles the case where files changed between generation completing
+	// and the watcher starting to listen again. While this check might seem
+	// redundant if we just updated the snapshot, it protects against race
+	// conditions where files change during the brief window between generation
+	// completing and the next watch cycle starting.
+	if w.snapshot != nil {
+		newSnapshot, err := takeFilesSnapshot(w.contentDir)
+		if err != nil {
+			return nil, fmt.Errorf("failed to take snapshot for %s: %v", w.contentDir, err)
+		}
+		if !filesSnapshotsAreEqual(w.snapshot, newSnapshot) {
+			util.PrintVerbose("Files changed between generation cycles. Starting update.")
+			// Files changed, wait for stability and return
+			stableSnapshot, err := w.waitForStability(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return &WatchResult{
+				Snapshot: stableSnapshot,
+				Regen:    false,
+				Timeout:  false,
+			}, nil
+		}
+	}
+
+	// Wait for a file system event (or timeout)
+	regen, err := w.waitForEvent(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to watch for change event in %s: %v", w.sourceDir, err)
+	}
+
+	// Check if context expired (timeout for periodic regeneration)
+	if ctx.Err() == context.DeadlineExceeded {
+		util.PrintDebug("Regen timer expired for %s", w.sourceDir)
+		return &WatchResult{
+			Snapshot: w.snapshot,
+			Regen:    false,
+			Timeout:  true,
+		}, nil
+	}
+
+	// Wait for changes to stabilize before regenerating
+	stableSnapshot, err := w.waitForStability(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to wait for changes to finish for %s: %v", w.sourceDir, err)
+	}
+
+	return &WatchResult{
+		Snapshot: stableSnapshot,
+		Regen:    regen,
+		Timeout:  false,
+	}, nil
+}
+
+// waitForEvent waits for a file system event from the watcher.
+//
+// State: Idle -> EventDetected
+//
+// This method blocks until:
+//   - A file system event occurs (returns regen flag)
+//   - The watcher encounters an error (returns error)
+//   - The context times out (returns false, caller handles timeout)
+func (w *Watcher) waitForEvent(ctx context.Context) (bool, error) {
+	select {
+	case event, ok := <-w.fsWatcher.Events:
+		if !ok {
+			return false, fmt.Errorf("watcher unexpectedly closed while watching '%s'", w.contentDir)
+		}
+		util.PrintDebug("Watcher event detected for %s: %v", w.contentDir, event)
+
+		// Check if substitution strings file changed
+		regen := w.subsPath != "" &&
+			(event.Has(fsnotify.Write) || event.Has(fsnotify.Rename)) &&
+			filepath.Clean(event.Name) == w.subsPath
+		if regen {
+			util.PrintVerbose("Substitution strings file '%s' write seen", w.subsPath)
+		}
+
+		return regen, nil
+
+	case err, ok := <-w.fsWatcher.Errors:
+		if !ok {
+			return false, fmt.Errorf("failed to read watcher error for %s", w.contentDir)
+		}
+		return false, fmt.Errorf("watcher error for %s: %v", w.contentDir, err)
+
+	case <-ctx.Done():
+		return false, nil // Timeout, caller will handle
+	}
+}
+
+// waitForStability waits for file changes to stabilize by comparing snapshots.
+//
+// State: EventDetected -> WaitingForStability -> Ready
+//
+// Uses exponential backoff (quadratic: pass² * CHANGE_WAIT) to avoid
+// regenerating during rapid file operations (e.g., bulk edits, git operations).
+// Continues until two consecutive snapshots match, indicating changes are complete.
+func (w *Watcher) waitForStability(ctx context.Context) ([]fileSnapshot, error) {
+	util.PrintDebug("Waiting for changes to finish in %s", w.contentDir)
+
+	// Use a result channel pattern for cleaner coordination
+	type result struct {
+		snapshot []fileSnapshot
+		err      error
+	}
+
+	resultChan := make(chan result, 1)
+
+	go func() {
+		defer close(resultChan)
+
+		// Initial wait before first snapshot comparison
+		time.Sleep(CHANGE_WAIT * time.Millisecond)
+
+		var snapshot1, snapshot2 []fileSnapshot
+		var err error
+
+		// Loop until snapshots match (indicating stability)
+		for waitPass := 1; !filesSnapshotsAreEqual(snapshot1, snapshot2); waitPass++ {
+			// Check for cancellation
+			select {
+			case <-ctx.Done():
+				// Return current snapshot if available, or last known snapshot
+				if snapshot2 != nil {
+					resultChan <- result{snapshot: snapshot2}
+				} else if snapshot1 != nil {
+					resultChan <- result{snapshot: snapshot1}
+				} else {
+					resultChan <- result{snapshot: w.snapshot}
+				}
+				return
+			default:
+			}
+
+			// Log wait status
+			message := fmt.Sprintf("Wait for change pass %d for %s", waitPass, w.contentDir)
+			if waitPass > 1 {
+				util.PrintVerbose(message)
+			} else {
+				util.PrintDebug(message)
+			}
+
+			// Take before snapshot
+			if snapshot2 != nil {
+				snapshot1 = snapshot2
+			} else {
+				snapshot1, err = takeFilesSnapshot(w.contentDir)
+				if err != nil {
+					resultChan <- result{err: fmt.Errorf("failed to take files snapshot for %s: %v", w.contentDir, err)}
+					return
+				}
+			}
+
+			// Calculate wait time (exponential backoff: quadratic)
+			waitTime := waitPass * waitPass * CHANGE_WAIT
+			if waitTime > MAX_CHANGE_WAIT {
+				waitTime = MAX_CHANGE_WAIT
+			}
+			util.PrintDebug("Waiting %d ms for %s", waitTime, w.contentDir)
+
+			// Wait with cancellation support
+			select {
+			case <-ctx.Done():
+				if snapshot2 != nil {
+					resultChan <- result{snapshot: snapshot2}
+				} else {
+					resultChan <- result{snapshot: snapshot1}
+				}
+				return
+			case <-time.After(time.Duration(waitTime) * time.Millisecond):
+			}
+
+			// Take after snapshot
+			snapshot2, err = takeFilesSnapshot(w.contentDir)
+			if err != nil {
+				resultChan <- result{err: fmt.Errorf("failed to take files snapshot for %s: %v", w.contentDir, err)}
+				return
+			}
+		}
+
+		// Snapshots match - changes have stabilized
+		util.PrintDebug("Snapshots match for %s", w.contentDir)
+		resultChan <- result{snapshot: snapshot2}
+	}()
+
+	// Wait for result
+	res := <-resultChan
+	if res.err != nil {
+		return nil, res.err
+	}
+
+	return res.snapshot, nil
+}
+
+// UpdateSnapshot updates the internal snapshot state.
+// This should be called after successful generation.
+func (w *Watcher) UpdateSnapshot(snapshot []fileSnapshot) {
+	w.snapshot = snapshot
+}
+
+// GetSnapshot returns the current snapshot.
+func (w *Watcher) GetSnapshot() []fileSnapshot {
+	return w.snapshot
+}
+
 // watch watches for changes in the wiki content directory and regenerates files on the fly.
 func (wiki *Wiki) watch(clean bool, version string) error {
 	util.PrintVerbose("Watching for changes in '%s'", wiki.ContentDir)
 
-	var snapshot []fileSnapshot // Latest snapshot
+	// Create watcher
+	watcher, err := NewWatcher(wiki.ContentDir, wiki.subsPath, wiki.SourceDir)
+	if err != nil {
+		return fmt.Errorf("failed to create watcher: %v", err)
+	}
+	defer watcher.Close()
+
+	// Take initial snapshot
+	initialSnapshot, err := takeFilesSnapshot(wiki.ContentDir)
+	if err != nil {
+		return fmt.Errorf("failed to take initial snapshot: %v", err)
+	}
+	watcher.UpdateSnapshot(initialSnapshot)
+
+	// Main watch loop
 	for {
-		// Wait for when wiki needs to be updated.
-		var err error
-		var regen bool
-		if snapshot, regen, err = wiki.waitForWhenGenerateNeeded(clean, version, snapshot); err != nil {
+		// Wait for a change
+		result, err := watcher.WaitForChange()
+		if err != nil {
 			return fmt.Errorf("failed waiting to update %s wiki: %v", wiki.SourceDir, err)
 		}
 
-		// Reload substition strings if the substition strings file has changed.
-		if regen {
+		// Update snapshot
+		watcher.UpdateSnapshot(result.Snapshot)
+
+		// Reload substitution strings if needed
+		if result.Regen {
 			util.PrintVerbose("Reloading substitution strings from '%s'", wiki.subsPath)
 			if err := wiki.loadSubstitutionStrings(); err != nil {
-				return fmt.Errorf("failed to reload substition strings file: %v", err)
+				return fmt.Errorf("failed to reload substitution strings file: %v", err)
 			}
 		}
 
-		// Update wiki.
-		if err = wiki.generate(regen, clean, version); err != nil {
+		// Skip generation if this was just a timeout (periodic regen)
+		if result.Timeout {
+			util.PrintDebug("Periodic regeneration for %s", wiki.SourceDir)
+		}
+
+		// Update wiki
+		if err = wiki.generate(result.Regen, clean, version); err != nil {
 			return fmt.Errorf("failed to update %s wiki: %v", wiki.SourceDir, err)
 		}
 	}
 }
 
-func (wiki *Wiki) waitForWhenGenerateNeeded(clean bool, version string, snapshot []fileSnapshot) ([]fileSnapshot, bool, error) {
-	// Create timeout context so that a generate is done at least every MAX_REGEN_INTERVAL minutes.
-	ctx := context.Background()
-	ctx, cancelCtx := context.WithTimeout(ctx, MAX_REGEN_INTERVAL*time.Minute)
-	defer cancelCtx()
-
-	// Create channel to propagate errors from within goroutine.
-	errorChan := make(chan error, 1)
-	defer func() {
-		close(errorChan)
-	}()
-
-	// Create a chan for the goroutine to say it's done.
-	doneChan := make(chan struct{}, 1)
-	defer func() {
-		close(doneChan)
-	}()
-
-	// Define the result struct
-	type result struct {
-		snapshot []fileSnapshot
-		regen    bool
-	}
-
-	// Create a chan to return snapshot and regen value.
-	resultChan := make(chan result, 1)
-	defer func() {
-		close(resultChan)
-	}()
-
-	go func() {
-		// Say when this goroutine is done.
-		defer func() {
-			doneChan <- struct{}{}
-		}()
-
-		// Watch for changes.
-		var err error
-		var regen bool
-		if regen, err = watchForChangeEvent(ctx, wiki.ContentDir, wiki.subsPath, clean, version, snapshot); err != nil {
-			errorChan <- fmt.Errorf("watch for change event in %s failed: %v", wiki.SourceDir, err)
-			return
-		}
-
-		// Continue?
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
-		// Wait for changes to finish.
-		var newSnapshot []fileSnapshot
-		if newSnapshot, err = waitForChangesToFinish(ctx, wiki.ContentDir); err != nil {
-			errorChan <- fmt.Errorf("wait for changes to finish for %s failed: %v", wiki.SourceDir, err)
-			return
-		}
-
-		// We're exiting normally.
-		resultChan <- result{newSnapshot, regen}
-	}()
-
-	// Wait on results.
-	var err error
-	var res result
-	select {
-	case res = <-resultChan:
-		snapshot = res.snapshot
-	case err = <-errorChan:
-	case <-ctx.Done():
-		if ctx.Err() == context.DeadlineExceeded {
-			util.PrintDebug("Regen timer expired for %s", wiki.SourceDir)
-		}
-	}
-
-	// Wait for goroutine to finish, so that the chan it writes to isn't closed before any final writes.
-	<-doneChan
-
-	return snapshot, res.regen, err
-}
+// watchDirRecursive sets up watches on the specified directory and all subdirectories recursively.
 
 // watchDirRecursive sets up watches on the specified directory and all subdirectories recursively.
 func watchDirRecursive(path string, watcher *fsnotify.Watcher) error {
@@ -192,151 +441,4 @@ func filesSnapshotsAreEqual(snapshot1, snapshot2 []fileSnapshot) bool {
 		return false
 	}
 	return reflect.DeepEqual(snapshot1, snapshot2)
-}
-
-// waitForChangesToFinish waits for changes in dir to finish.
-func waitForChangesToFinish(ctx context.Context, dir string) ([]fileSnapshot, error) {
-	util.PrintDebug("Waiting for changes to finish in %s", dir)
-	// Create channels.
-	snapshotsMatchChan := make(chan []fileSnapshot, 1) // Signals that changes are complete.
-	errorChan := make(chan error, 1)                   // Signals that an error happened while waiting.
-	doneChan := make(chan struct{}, 1)                 // Signals that goroutine is done.
-	defer func() {
-		close(snapshotsMatchChan)
-		close(errorChan)
-		close(doneChan)
-	}()
-
-	// Wait for changes to complete.
-	go func() {
-		// Say when this goroutine is done.
-		defer func() {
-			doneChan <- struct{}{}
-		}()
-
-		// Initial wait.
-		time.Sleep(CHANGE_WAIT * time.Millisecond)
-
-		var snapshot1, snapshot2 []fileSnapshot
-		var err error
-		for waitPass := 1; !filesSnapshotsAreEqual(snapshot1, snapshot2); waitPass++ {
-			select {
-			case <-ctx.Done():
-				// The context has ended and so end this goroutine too.
-				return
-			default:
-				// Print wait status.
-				message := fmt.Sprintf("Wait for change pass %d for %s", waitPass, dir)
-				if waitPass > 1 {
-					util.PrintVerbose(message)
-				} else {
-					util.PrintDebug(message)
-				}
-
-				// Take a before snapshot.
-				if snapshot2 != nil {
-					snapshot1 = snapshot2
-				} else {
-					snapshot1, err = takeFilesSnapshot(dir)
-					if err != nil {
-						errorChan <- fmt.Errorf("failed to take files snapshot for %s: %v", dir, err)
-					}
-				}
-
-				// Wait
-				waitTime := waitPass * waitPass * CHANGE_WAIT
-				if waitTime > MAX_CHANGE_WAIT {
-					waitTime = MAX_CHANGE_WAIT
-				}
-				util.PrintDebug("Waiting %d ms for %s", waitTime, dir)
-				time.Sleep(time.Duration(waitTime) * time.Millisecond)
-
-				// Take an after snapshot.
-				if snapshot2, err = takeFilesSnapshot(dir); err != nil {
-					errorChan <- fmt.Errorf("failed to take files snapshot for %s: %v", dir, err)
-				}
-			}
-		}
-
-		// Snapshots match. Remember last snapshot.
-		snapshotsMatchChan <- snapshot2
-	}()
-
-	// Wait for results.
-	var snapshot []fileSnapshot
-	var err error
-	select {
-	case snapshot = <-snapshotsMatchChan:
-		util.PrintDebug("Snapshots match for %s", dir)
-		break
-	case err = <-errorChan:
-		break
-	case <-ctx.Done():
-		break
-	}
-
-	// Wait for goroutine to finish, so that the chans it writes to aren't closed before any final writes.
-	<-doneChan
-
-	return snapshot, err
-}
-
-// watchForChangeEvent watches for a change to the wiki content.
-func watchForChangeEvent(ctx context.Context, contentDir string, subsPath string, clean bool, version string, snapshot []fileSnapshot) (bool, error) {
-	// Create and initialize watcher.
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return false, fmt.Errorf("failed to create watcher for '%s': %v", contentDir, err)
-	}
-	defer watcher.Close()
-	if err = watchDirRecursive(contentDir, watcher); err != nil {
-		return false, fmt.Errorf("failed to initialize watcher for %s: %v", contentDir, err)
-	}
-	if subsPath != "" {
-		// Watch substitution-strings.csv too.
-		err := watcher.Add(subsPath)
-		if err != nil {
-			return false, fmt.Errorf("failed to watch '%s': '%s'", subsPath, err)
-		}
-	}
-
-	// Make sure files haven't changed in between when wiki update started and new watch started.
-	if snapshot != nil {
-		newSnapshot, err := takeFilesSnapshot(contentDir)
-		if err != nil {
-			return false, fmt.Errorf("failed to take new snapshot for %s: %v", contentDir, err)
-		}
-		if !filesSnapshotsAreEqual(snapshot, newSnapshot) {
-			// Files have changed. Start a new update.
-			util.PrintVerbose("About to watch for changes but file snapshots differ. Starting a new update.")
-			return false, nil
-		}
-	}
-
-	// Watch for changes.
-	select {
-	case event, ok := <-watcher.Events:
-		if !ok {
-			return false, fmt.Errorf("watcher unexpectedly closed while watching '%s' %v", contentDir, err)
-		}
-		util.PrintDebug("Watcher event detected for %s: %v", contentDir, event)
-
-		// Regenerate all files if the substitution strings file has changed.
-		regen := subsPath != "" &&
-			(event.Has(fsnotify.Write) || event.Has(fsnotify.Rename)) &&
-			filepath.Clean(event.Name) == subsPath
-		if regen {
-			util.PrintVerbose("Substitution strings file '%s' write seen", subsPath)
-		}
-
-		return regen, nil
-	case err, ok := <-watcher.Errors:
-		if !ok {
-			return false, fmt.Errorf("failed to read watcher error for %s", contentDir)
-		}
-		return false, fmt.Errorf("watcher error for %s: %v", contentDir, err)
-	case <-ctx.Done():
-		// Regen timer has expired.
-		return false, nil
-	}
 }

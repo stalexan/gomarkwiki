@@ -1,0 +1,1 @@
+./scripts/copy-files-for-claude.sh

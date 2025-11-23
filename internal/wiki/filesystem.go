@@ -85,8 +85,10 @@ func (wiki Wiki) copyFileToDest(sourceInfo fs.FileInfo, sourcePath, sourceRelPat
 	if source, err = os.Open(sourcePath); err != nil {
 		if os.IsNotExist(err) {
 			util.PrintVerbose("'%s' was not copied to dest because it no longer exists", sourcePath)
+			return nil
 		} else {
 			util.PrintError(err, "could not open '%s' for copy to dest", sourcePath)
+			return nil
 		}
 	}
 	defer source.Close()

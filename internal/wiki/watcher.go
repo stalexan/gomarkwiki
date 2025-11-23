@@ -239,7 +239,7 @@ func (w *Watcher) waitForEvent(ctx context.Context) (bool, error) {
 //
 // State: EventDetected -> WaitingForStability -> Ready
 //
-// Uses exponential backoff (quadratic: pass² * CHANGE_WAIT) to avoid
+// Uses exponential backoff (2^n * CHANGE_WAIT) to avoid
 // regenerating during rapid file operations (e.g., bulk edits, git operations).
 // Continues until two consecutive snapshots match, indicating changes are complete.
 func (w *Watcher) waitForStability(ctx context.Context) ([]fileSnapshot, error) {
@@ -298,8 +298,8 @@ func (w *Watcher) waitForStability(ctx context.Context) ([]fileSnapshot, error) 
 				}
 			}
 
-			// Calculate wait time (exponential backoff: quadratic)
-			waitTime := time.Duration(waitPass*waitPass) * CHANGE_WAIT
+			// Calculate wait time (exponential backoff: 2^n)
+			waitTime := CHANGE_WAIT * (1 << (waitPass - 1))
 			if waitTime > MAX_CHANGE_WAIT {
 				waitTime = MAX_CHANGE_WAIT
 			}

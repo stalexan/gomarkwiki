@@ -97,7 +97,7 @@ func (wiki *Wiki) loadSubstitutionStrings() error {
 	// Save substitutions.
 	seenPlaceholders := make(map[string]int)
 	for i, pair := range pairs {
-		placeholder := pair[0]
+		placeholder := strings.TrimSpace(pair[0])
 
 		// Validate placeholder
 		if err := validatePlaceholder(placeholder); err != nil {

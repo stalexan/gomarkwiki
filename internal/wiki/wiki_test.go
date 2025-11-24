@@ -117,6 +117,133 @@ func TestA01GenerateTinyWiki(t *testing.T) {
 	success = true
 }
 
+// TestCollisionDetectionDeterministic tests that collision detection is deterministic
+// across multiple generation cycles. When multiple markdown files would generate the
+// same HTML path, the same file should always win (based on lexicographic ordering).
+func TestCollisionDetectionDeterministic(t *testing.T) {
+	// Create temp dir.
+	var testCaseTempDir string
+	var err error
+	var success bool
+	if testCaseTempDir, err = os.MkdirTemp(tempDir, "collision-test"); err != nil {
+		t.Fatalf("Error creating test case temp directory: %v", err)
+	}
+	defer func() {
+		if success {
+			t.Logf("Removing test case temp directory %s", testCaseTempDir)
+			if err := os.RemoveAll(testCaseTempDir); err != nil {
+				t.Fatalf("Error removing test case temp directory: %v", err)
+			}
+		}
+	}()
+	t.Logf("Created test case temp directory %s", testCaseTempDir)
+
+	// Create source directory structure
+	sourceDir := filepath.Join(testCaseTempDir, "source")
+	contentDir := filepath.Join(sourceDir, "content")
+	if err = os.MkdirAll(contentDir, 0755); err != nil {
+		t.Fatalf("Failed to create content directory %s: %v", contentDir, err)
+	}
+
+	// Create multiple markdown files that would all generate "test.html"
+	// Using different extensions to ensure they collide
+	files := []struct {
+		name     string
+		content  string
+		expected string // Which file should win (lexicographically first)
+	}{
+		{"test.markdown", "# Test Markdown", "test.markdown"}, // "markdown" < "md" < "mdwn" lexicographically
+		{"test.md", "# Test MD", "test.markdown"},             // Should be skipped
+		{"test.mdwn", "# Test MDWN", "test.markdown"},         // Should be skipped
+	}
+
+	for _, f := range files {
+		filePath := filepath.Join(contentDir, f.name)
+		if err = os.WriteFile(filePath, []byte(f.content), 0644); err != nil {
+			t.Fatalf("Failed to create file %s: %v", filePath, err)
+		}
+	}
+
+	// Create static directory (required by NewWiki)
+	staticDir := filepath.Join(sourceDir, "static")
+	if err = os.MkdirAll(staticDir, 0755); err != nil {
+		t.Fatalf("Failed to create static directory %s: %v", staticDir, err)
+	}
+
+	// Create output dir
+	outputDir := filepath.Join(testCaseTempDir, "output")
+	if err = os.MkdirAll(outputDir, 0755); err != nil {
+		t.Fatalf("Failed to create directory %s: %v", outputDir, err)
+	}
+
+	// Create Wiki instance
+	var theWiki *Wiki
+	if theWiki, err = NewWiki(sourceDir, outputDir); err != nil {
+		t.Fatalf("Error creating Wiki instance: %v", err)
+	}
+
+	// Run generation multiple times to verify deterministic behavior
+	expectedWinner := "test.markdown"
+	for i := 0; i < 3; i++ {
+		// Clean output directory between runs
+		if err = os.RemoveAll(outputDir); err != nil {
+			t.Fatalf("Failed to clean output directory: %v", err)
+		}
+		if err = os.MkdirAll(outputDir, 0755); err != nil {
+			t.Fatalf("Failed to recreate output directory: %v", err)
+		}
+
+		// Generate wiki
+		if err = theWiki.Generate(context.Background(), true, false, false, "test"); err != nil {
+			t.Fatalf("Error generating wiki (run %d): %v", i+1, err)
+		}
+
+		// Verify that only one HTML file was created
+		expectedHtmlPath := filepath.Join(outputDir, "test.html")
+		if _, err = os.Stat(expectedHtmlPath); err != nil {
+			t.Fatalf("Expected HTML file %s not found (run %d): %v", expectedHtmlPath, i+1, err)
+		}
+
+		// Verify that the content matches the expected winner (test.markdown)
+		htmlContent, err := os.ReadFile(expectedHtmlPath)
+		if err != nil {
+			t.Fatalf("Failed to read HTML file: %v", err)
+		}
+
+		// The HTML should contain content from test.markdown (the lexicographically first file)
+		if !strings.Contains(string(htmlContent), "Test Markdown") {
+			t.Fatalf("HTML file does not contain expected content from %s (run %d). Content: %s", expectedWinner, i+1, string(htmlContent)[:min(200, len(htmlContent))])
+		}
+
+		// Verify that only one HTML file exists (no duplicates)
+		htmlFiles := 0
+		err = filepath.Walk(outputDir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if !info.IsDir() && filepath.Ext(path) == ".html" {
+				htmlFiles++
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("Error walking output directory: %v", err)
+		}
+		if htmlFiles != 1 {
+			t.Fatalf("Expected exactly 1 HTML file, found %d (run %d)", htmlFiles, i+1)
+		}
+	}
+
+	success = true
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 func copyDir(dir1, dir2 string) error {
 	// Make sure dir2 doesn't exit.
 	_, err := os.Stat(dir2)

@@ -160,6 +160,13 @@ func (wiki Wiki) generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath 
 }
 
 // generateFromContent generates the part of the wiki that comes from the source content.
+//
+// Collision detection: If multiple markdown files would generate the same HTML path
+// (e.g., "foo.md" and "foo.markdown" both generate "foo.html"), the first file
+// encountered during the walk wins, and subsequent files are skipped with a warning.
+// The ordering is deterministic because filepath.Walk processes files in lexicographic
+// order (as returned by the filesystem), ensuring consistent collision resolution
+// across regeneration cycles in watch mode.
 func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version string) (map[string]bool, error) {
 	// Walk the source directory and generate the wiki from the files found.
 	util.PrintDebug("Generating wiki '%s' from '%s'", wiki.DestDir, wiki.SourceDir)

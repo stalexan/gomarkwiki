@@ -473,8 +473,7 @@ func (wiki *Wiki) watch(ctx context.Context, clean bool, version string) error {
 			if err := wiki.loadSubstitutionStrings(); err != nil {
 				return fmt.Errorf("failed to reload substitution strings file: %v", err)
 			}
-			// Ensure mod time is updated after reload
-			watcher.checkSubsFileChanged()
+			// Mod time already updated by UpdateSnapshot above
 		}
 
 		// Skip generation if this was just a timeout (periodic regen)

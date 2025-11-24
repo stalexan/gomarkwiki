@@ -13,7 +13,7 @@ import (
 	"github.com/stalexan/gomarkwiki/internal/util"
 )
 
-// markdownExts specifies markdown file exptensions.
+// markdownExts specifies markdown file extensions.
 var markdownExts = [...]string{".md", ".mdwn", ".markdown"}
 
 // isPathMarkdown returns true if path has a markdown extension.
@@ -27,7 +27,7 @@ func isPathMarkdown(path string) bool {
 	return false
 }
 
-// removeFileExtention removes the file extention from path; e.g. Foo/Bar.md becomes Foo/Bar
+// removeFileExtension removes the file extension from path; e.g. Foo/Bar.md becomes Foo/Bar
 func removeFileExtension(path string) string {
 	extension := filepath.Ext(path)
 	return path[:len(path)-len(extension)]

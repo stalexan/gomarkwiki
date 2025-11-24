@@ -60,6 +60,11 @@ DESCRIPTION
        the line "FOOBAR,www.foobar.com" then any instance of {{FOOBAR}} in
        a Markdown file will result in www.foobar.com in the HTML file.
 
+       If a substitution value contains a comma, it must be quoted using double
+       quotes. For example, "PLACEHOLDER,\"value, with comma\"" will correctly
+       parse a substitution value containing a comma. Unquoted values with commas
+       will cause a parse error.
+
        Files can be ignored with the file source_dir/ignore.txt. Each line
        should be one regular expression that specifies file names to ignore.
        For example, an ignore.txt with the line \.tmp$ will ignore all files

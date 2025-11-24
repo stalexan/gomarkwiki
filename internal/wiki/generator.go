@@ -58,19 +58,18 @@ func checkForStyleDirective(data []byte) (bool, []byte) {
 }
 
 // generateHtmlFromMarkdown generates an HTML file from a markdown file.
-func (wiki Wiki) generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath string, regen bool, version string) (string, error) {
-	// Determine the output path for the HTML file. For example, if the markdown
-	// relative path (mdRelPath) is Foo/Bar.mdwn and the destination directory (destDir)
-	// is /wiki-html, the output path (outPath) is /wiki-html/Foo/Bar.html.
-	relPathNoExt := removeFileExtension(mdRelPath)
-	relOutPath := relPathNoExt + ".html"
-	outPath := filepath.Join(wiki.DestDir, relOutPath)
+// relDestPath is the relative destination path (e.g., "Foo/Bar.html") that was
+// already computed for collision detection in the caller.
+func (wiki Wiki) generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath, relDestPath string, regen bool, version string) (string, error) {
+	// Compute the full output path. For example, if relDestPath is Foo/Bar.html
+	// and the destination directory (destDir) is /wiki-html, the output path is /wiki-html/Foo/Bar.html.
+	outPath := filepath.Join(wiki.DestDir, relDestPath)
 	outDir := filepath.Dir(outPath)
 
 	// Skip generating the HTML if markdown is older than current HTML.
 	// Note: We use mdInfo here, but if the file is deleted before reading, we'll handle that below.
 	if !regen && destIsOlder(mdInfo, outPath) {
-		return relOutPath, nil
+		return relDestPath, nil
 	}
 	util.PrintVerbose("Generating '%s'", outPath)
 
@@ -122,7 +121,8 @@ func (wiki Wiki) generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath 
 	// Extract title from file path. The html/template package automatically escapes
 	// all template variables (including this title) to prevent XSS attacks, so
 	// special characters in file paths are safely handled.
-	title := filepath.Base(relPathNoExt) // Markdown file name without file extension
+	relPathNoExt := removeFileExtension(relDestPath) // Remove .html extension for title
+	title := filepath.Base(relPathNoExt)             // Markdown file name without file extension
 	if useGitHubStyle {
 		if err = githubHtmlHeaderTemplate.Execute(html, templateData{title, version, rootRelPath}); err != nil {
 			return "", fmt.Errorf("failed to create GitHub HTML header for '%s': %v", outPath, err)
@@ -155,7 +155,7 @@ func (wiki Wiki) generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath 
 		return "", fmt.Errorf("failed to write HTML file '%s': %v", outPath, err)
 	}
 
-	return relOutPath, nil
+	return relDestPath, nil
 }
 
 // generateFromContent generates the part of the wiki that comes from the source content.
@@ -232,7 +232,7 @@ func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version st
 			}
 
 			// Generate HTML from markdown.
-			relDestPath, err = wiki.generateHtmlFromMarkdown(info, contentPath, relContentPath, regen, version)
+			relDestPath, err = wiki.generateHtmlFromMarkdown(info, contentPath, relContentPath, relDestPath, regen, version)
 			if err != nil {
 				util.PrintError(err, "failed to generate HTML for '%s'", contentPath)
 				return nil

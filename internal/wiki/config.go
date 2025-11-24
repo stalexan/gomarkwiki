@@ -19,17 +19,11 @@ const (
 	// MaxMarkdownFileSize is the maximum size in bytes for a markdown file that can be processed
 	MaxMarkdownFileSize = 100 * 1024 * 1024 // 100 MB
 
-	// MaxCSVFileSize is the maximum size in bytes for a CSV file (e.g., substitution-strings.csv)
-	MaxCSVFileSize = 10 * 1024 * 1024 // 10 MB
-
 	// MaxFilesProcessed is the maximum number of files that can be processed in a single wiki generation
 	MaxFilesProcessed = 1000000 // 1 million files
 
 	// MaxRecursionDepth is the maximum directory recursion depth allowed
 	MaxRecursionDepth = 1000 // 1000 levels
-
-	// MaxSubstitutionStrings is the maximum number of substitution string pairs allowed
-	MaxSubstitutionStrings = 10000 // 10,000 pairs
 )
 
 // validatePlaceholder validates a placeholder name according to the rules:

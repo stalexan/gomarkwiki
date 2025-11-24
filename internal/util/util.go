@@ -10,6 +10,15 @@ import (
 var Verbose bool
 var Debug bool
 
+// Resource limits for CSV file processing
+const (
+	// MaxCSVFileSize is the maximum size in bytes for a CSV file that can be processed
+	MaxCSVFileSize = 10 * 1024 * 1024 // 10 MB
+
+	// MaxSubstitutionStrings is the maximum number of substitution string pairs allowed
+	MaxSubstitutionStrings = 10000 // 10,000 pairs
+)
+
 func formatMessage(format string, args []interface{}) string {
 	return fmt.Sprintf(format, args...)
 }
@@ -81,8 +90,6 @@ func LoadStringPairs(csvPath string) ([][2]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to stat '%s': %v", csvPath, err)
 	}
-	const MaxCSVFileSize = 10 * 1024 * 1024 // 10 MB
-	const MaxSubstitutionStrings = 10000    // 10,000 pairs
 
 	if fileInfo.Size() > MaxCSVFileSize {
 		return nil, fmt.Errorf("CSV file '%s' is too large (%d bytes, max %d bytes)", csvPath, fileInfo.Size(), MaxCSVFileSize)

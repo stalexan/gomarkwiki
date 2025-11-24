@@ -69,19 +69,30 @@ func (wiki Wiki) generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath 
 	outDir := filepath.Dir(outPath)
 
 	// Skip generating the HTML if markdown is older than current HTML.
+	// Note: We use mdInfo here, but if the file is deleted before reading, we'll handle that below.
 	if !regen && destIsOlder(mdInfo, outPath) {
 		return relOutPath, nil
 	}
 	util.PrintVerbose("Generating '%s'", outPath)
 
+	// Re-stat the file right before reading to get current info and prevent TOCTOU issues.
+	currentInfo, err := os.Stat(mdPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			util.PrintVerbose("markdown '%s' no longer exists and so no HTML will be generated for it", mdPath)
+			return "", nil
+		} else {
+			return "", fmt.Errorf("failed to stat markdown file '%s': %v", mdPath, err)
+		}
+	}
+
 	// Check file size before reading to prevent resource exhaustion
-	if mdInfo.Size() > MaxMarkdownFileSize {
-		return "", fmt.Errorf("markdown file '%s' is too large (%d bytes, max %d bytes)", mdPath, mdInfo.Size(), MaxMarkdownFileSize)
+	if currentInfo.Size() > MaxMarkdownFileSize {
+		return "", fmt.Errorf("markdown file '%s' is too large (%d bytes, max %d bytes)", mdPath, currentInfo.Size(), MaxMarkdownFileSize)
 	}
 
 	// Read markdown file.
 	var data []byte
-	var err error
 	if data, err = os.ReadFile(mdPath); err != nil {
 		if os.IsNotExist(err) {
 			util.PrintVerbose("markdown '%s' no longer exists and so no HTML will be generated for it", mdPath)

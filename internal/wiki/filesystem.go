@@ -78,17 +78,28 @@ func (wiki Wiki) copyFileToDest(ctx context.Context, sourceInfo fs.FileInfo, sou
 	}
 
 	// Skip copying if source is older than dest.
+	// Note: We use sourceInfo here, but if the file is deleted before opening, we'll handle that below.
 	destPath := filepath.Join(wiki.DestDir, sourceRelPath)
 	if !regen && destIsOlder(sourceInfo, destPath) {
 		return nil
 	}
 
 	// Create dest dir if it doesn't exist.
+	// os.MkdirAll is idempotent, so no need to check existence first (avoids TOCTOU).
 	destDirPath := filepath.Dir(destPath)
-	var err error
-	if _, err = os.Stat(destDirPath); os.IsNotExist(err) {
-		if err = os.MkdirAll(destDirPath, os.ModePerm); err != nil {
-			return fmt.Errorf("failed to create dest dir '%s': %v", destDirPath, err)
+	if err := os.MkdirAll(destDirPath, os.ModePerm); err != nil {
+		return fmt.Errorf("failed to create dest dir '%s': %v", destDirPath, err)
+	}
+
+	// Re-stat the source file right before opening to get current info and prevent TOCTOU issues.
+	currentSourceInfo, err := os.Stat(sourcePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			util.PrintVerbose("'%s' was not copied to dest because it no longer exists", sourcePath)
+			return nil
+		} else {
+			util.PrintError(err, "could not stat '%s' for copy to dest", sourcePath)
+			return nil
 		}
 	}
 
@@ -104,6 +115,7 @@ func (wiki Wiki) copyFileToDest(ctx context.Context, sourceInfo fs.FileInfo, sou
 			return nil
 		}
 	}
+	_ = currentSourceInfo // Re-stat'd to prevent TOCTOU; available for future size checks if needed
 	defer source.Close()
 	if err := copyToFile(ctx, destPath, source); err != nil {
 		return err

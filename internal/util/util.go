@@ -82,6 +82,9 @@ func LoadStringPairs(csvPath string) ([][2]string, error) {
 	reader.FieldsPerRecord = 2
 	var records [][]string
 	if records, err = reader.ReadAll(); err != nil {
+		if parseErr, ok := err.(*csv.ParseError); ok {
+			return nil, fmt.Errorf("CSV parse error in '%s' at line %d: %v", csvPath, parseErr.Line, err)
+		}
 		return nil, fmt.Errorf("unable to read '%s': %v", csvPath, err)
 	}
 

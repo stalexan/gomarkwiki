@@ -39,6 +39,14 @@ var gitHubDirective []byte = []byte("#[style(github)]")
 // line of `data`. Returns true if found and removes directive. Otherwise,
 // returns false.
 func checkForStyleDirective(data []byte) (bool, []byte) {
+	// Strip UTF-8 BOM if present
+	if len(data) >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF {
+		data = data[3:]
+	}
+
+	// Trim leading whitespace (including newlines, spaces, tabs)
+	data = bytes.TrimLeft(data, " \t\n\r")
+
 	// Check for directive
 	hasDirective := false
 	if bytes.HasPrefix(data, gitHubDirective) {

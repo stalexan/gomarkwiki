@@ -3,7 +3,9 @@ package util
 
 import (
 	"encoding/csv"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 )
 
@@ -14,6 +16,9 @@ var Debug bool
 const (
 	// MaxCSVFileSize is the maximum size in bytes for a CSV file that can be processed
 	MaxCSVFileSize = 10 * 1024 * 1024 // 10 MB
+
+	// MaxCSVFieldSize is the maximum size in bytes for a single CSV field
+	MaxCSVFieldSize = 64 * 1024 // 64 KB
 
 	// MaxSubstitutionStrings is the maximum number of substitution string pairs allowed
 	MaxSubstitutionStrings = 10000 // 10,000 pairs
@@ -95,26 +100,52 @@ func LoadStringPairs(csvPath string) ([][2]string, error) {
 		return nil, fmt.Errorf("CSV file '%s' is too large (%d bytes, max %d bytes)", csvPath, fileInfo.Size(), MaxCSVFileSize)
 	}
 
-	// Read file.
+	// Read file incrementally to check field sizes and prevent memory exhaustion
 	reader := csv.NewReader(file)
 	reader.Comma = ','
 	reader.FieldsPerRecord = 2
-	var records [][]string
-	if records, err = reader.ReadAll(); err != nil {
-		if parseErr, ok := err.(*csv.ParseError); ok {
-			return nil, fmt.Errorf("CSV parse error in '%s' at line %d: %v", csvPath, parseErr.Line, err)
+
+	result := make([][2]string, 0)
+	lineNum := 0
+
+	for {
+		record, err := reader.Read()
+		if err != nil {
+			// Check if we've reached end of file
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			// Handle CSV parse errors
+			if parseErr, ok := err.(*csv.ParseError); ok {
+				return nil, fmt.Errorf("CSV parse error in '%s' at line %d: %v", csvPath, parseErr.Line, err)
+			}
+			return nil, fmt.Errorf("unable to read '%s': %v", csvPath, err)
 		}
-		return nil, fmt.Errorf("unable to read '%s': %v", csvPath, err)
-	}
 
-	// Check number of entries limit
-	if len(records) > MaxSubstitutionStrings {
-		return nil, fmt.Errorf("CSV file '%s' has too many entries (%d entries, max %d entries)", csvPath, len(records), MaxSubstitutionStrings)
-	}
+		lineNum++
 
-	// Save pairs.
-	result := make([][2]string, 0, len(records))
-	for _, record := range records {
+		// Check number of entries limit
+		if len(result) >= MaxSubstitutionStrings {
+			return nil, fmt.Errorf("CSV file '%s' has too many entries (max %d entries)", csvPath, MaxSubstitutionStrings)
+		}
+
+		// Validate field sizes to prevent memory exhaustion from oversized fields
+		if len(record) != 2 {
+			return nil, fmt.Errorf("CSV file '%s' has invalid record at line %d: expected 2 fields, got %d", csvPath, lineNum, len(record))
+		}
+
+		field0Size := len(record[0])
+		field1Size := len(record[1])
+
+		if field0Size > MaxCSVFieldSize {
+			return nil, fmt.Errorf("CSV file '%s' has field too large at line %d, field 1 (%d bytes, max %d bytes)", csvPath, lineNum, field0Size, MaxCSVFieldSize)
+		}
+
+		if field1Size > MaxCSVFieldSize {
+			return nil, fmt.Errorf("CSV file '%s' has field too large at line %d, field 2 (%d bytes, max %d bytes)", csvPath, lineNum, field1Size, MaxCSVFieldSize)
+		}
+
+		// Save pair
 		result = append(result, [2]string{record[0], record[1]})
 	}
 

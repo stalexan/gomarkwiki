@@ -153,8 +153,18 @@ func (wiki *Wiki) copyCssFiles(ctx context.Context, relDestPaths map[string]bool
 		relDestPaths[cssFile] = true
 	}
 
-	// Is copy neeeded?
-	if !wiki.styleCssCopyNeeded {
+	// Check if CSS files need to be copied (if they don't exist in dest).
+	needsCopy := false
+	for _, cssFile := range cssFiles {
+		destPath := filepath.Join(wiki.DestDir, cssFile)
+		if _, err := os.Stat(destPath); os.IsNotExist(err) {
+			needsCopy = true
+			break
+		}
+	}
+
+	// Skip copying if all CSS files already exist.
+	if !needsCopy {
 		return nil
 	}
 
@@ -170,9 +180,6 @@ func (wiki *Wiki) copyCssFiles(ctx context.Context, relDestPaths map[string]bool
 			return err
 		}
 	}
-
-	// CSS files only need to be copied once per run.
-	wiki.styleCssCopyNeeded = false
 
 	return nil
 }

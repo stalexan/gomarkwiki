@@ -19,8 +19,6 @@ type Wiki struct {
 	ContentDir string // Content directory within source directory
 	DestDir    string // Dest directory where wiki will be generated
 
-	styleCssCopyNeeded bool // Whether CSS files needs to be copied to dest
-
 	subStrings [][2]string // Substitution strings. Each pair is the string to look for and what to replace it with.
 	subsPath   string      // Path to substitution strings file.
 
@@ -77,13 +75,12 @@ func NewWiki(sourceDir, destDir string) (*Wiki, error) {
 	}
 
 	wiki := Wiki{
-		SourceDir:          sourceDir,
-		ContentDir:         filepath.Join(sourceDir, "content"),
-		DestDir:            destDir,
-		styleCssCopyNeeded: true,
-		subStrings:         nil,
-		subsPath:           "",
-		ignore:             nil,
+		SourceDir:  sourceDir,
+		ContentDir: filepath.Join(sourceDir, "content"),
+		DestDir:    destDir,
+		subStrings: nil,
+		subsPath:   "",
+		ignore:     nil,
 	}
 
 	// Check that the dirs in Wiki exist.

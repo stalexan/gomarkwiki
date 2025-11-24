@@ -237,13 +237,6 @@ func TestCollisionDetectionDeterministic(t *testing.T) {
 	success = true
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 func copyDir(dir1, dir2 string) error {
 	// Make sure dir2 doesn't exit.
 	_, err := os.Stat(dir2)

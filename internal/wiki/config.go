@@ -8,9 +8,50 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
+	"unicode"
 
 	"github.com/stalexan/gomarkwiki/internal/util"
 )
+
+// validatePlaceholder validates a placeholder name according to the rules:
+// - Must not be empty
+// - Must not have leading or trailing whitespace
+// - Must be at most 100 characters
+// - Must contain at least one letter or digit
+// - Can only contain letters, digits, underscore, and hyphen
+func validatePlaceholder(placeholder string) error {
+	placeholder = strings.TrimSpace(placeholder)
+
+	if len(placeholder) == 0 {
+		return fmt.Errorf("placeholder cannot be empty")
+	}
+
+	if len(placeholder) > 100 {
+		return fmt.Errorf("placeholder too long (max 100 characters): %q", placeholder)
+	}
+
+	// Must have at least one alphanumeric
+	hasAlnum := false
+	for _, r := range placeholder {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			hasAlnum = true
+			break
+		}
+	}
+	if !hasAlnum {
+		return fmt.Errorf("placeholder must contain at least one letter or digit: %q", placeholder)
+	}
+
+	// Character validation (catches everything else: braces, control chars, whitespace, special chars)
+	for _, r := range placeholder {
+		if !(unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '-') {
+			return fmt.Errorf("placeholder can only contain letters, digits, underscore, and hyphen: %q", placeholder)
+		}
+	}
+
+	return nil
+}
 
 // loadSubstitutionStrings loads substitution strings for a wiki, from its substitution-strings.csv
 func (wiki *Wiki) loadSubstitutionStrings() error {
@@ -36,11 +77,21 @@ func (wiki *Wiki) loadSubstitutionStrings() error {
 	}
 
 	// Save substitutions.
-	for _, pair := range pairs {
+	seenPlaceholders := make(map[string]int)
+	for i, pair := range pairs {
 		placeholder := pair[0]
-		if len(placeholder) == 0 {
-			continue
+
+		// Validate placeholder
+		if err := validatePlaceholder(placeholder); err != nil {
+			return fmt.Errorf("invalid placeholder at line %d: %v", i+1, err)
 		}
+
+		// Check for duplicates
+		if existingLine, exists := seenPlaceholders[placeholder]; exists {
+			return fmt.Errorf("duplicate placeholder %q found at line %d (first seen at line %d)", placeholder, i+1, existingLine+1)
+		}
+		seenPlaceholders[placeholder] = i
+
 		placeholder = fmt.Sprintf("{{%s}}", placeholder)
 		substitution := pair[1]
 		wiki.subStrings = append(wiki.subStrings, [2]string{placeholder, substitution})

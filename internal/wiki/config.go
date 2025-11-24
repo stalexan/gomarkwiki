@@ -106,9 +106,9 @@ func (wiki *Wiki) loadSubstitutionStrings() error {
 
 		// Check for duplicates
 		if existingLine, exists := seenPlaceholders[placeholder]; exists {
-			return fmt.Errorf("duplicate placeholder %q found at line %d (first seen at line %d)", placeholder, i+1, existingLine+1)
+			return fmt.Errorf("duplicate placeholder %q found at line %d (first seen at line %d)", placeholder, i+1, existingLine)
 		}
-		seenPlaceholders[placeholder] = i
+		seenPlaceholders[placeholder] = i + 1
 
 		placeholder = fmt.Sprintf("{{%s}}", placeholder)
 		substitution := pair[1]

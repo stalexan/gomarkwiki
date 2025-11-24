@@ -235,7 +235,7 @@ func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version st
 			// Generate HTML from markdown.
 			relDestPath, err = wiki.generateHtmlFromMarkdown(info, contentPath, relContentPath, regen, version)
 			if err != nil {
-				util.PrintError(err, "failed to find generate HTML for '%s'", contentPath)
+				util.PrintError(err, "failed to generate HTML for '%s'", contentPath)
 				return nil
 			}
 

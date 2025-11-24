@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"runtime"
 	"runtime/pprof"
+	"sync"
 	"syscall"
 
 	"github.com/stalexan/gomarkwiki/internal/util"
@@ -160,14 +161,16 @@ func generateWikis(wikis []*wiki.Wiki, regen, clean, watch bool, version string)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel() // Ensure cleanup on return
 
-	// Create channels to watch for completions, errors, and the terminate signal.
-	doneChan := make(chan struct{})
+	// Create channels to watch for errors and the terminate signal.
 	errorChan := make(chan error, len(wikis)) // Buffered to prevent blocking
 	termChan := make(chan os.Signal, 1)
 	signal.Notify(termChan, os.Interrupt, syscall.SIGTERM)
 
+	var wg sync.WaitGroup
+
 	// Define worker function.
 	worker := func(wiki *wiki.Wiki) {
+		defer wg.Done()
 		// Generate wiki with context.
 		if err := wiki.Generate(ctx, regen, clean, watch, version); err != nil {
 			select {
@@ -176,16 +179,10 @@ func generateWikis(wikis []*wiki.Wiki, regen, clean, watch bool, version string)
 			}
 			return
 		}
-		// Only signal done if not watching (watching workers never complete normally)
-		if !watch {
-			select {
-			case doneChan <- struct{}{}:
-			case <-ctx.Done():
-			}
-		}
 	}
 
 	// Start workers.
+	wg.Add(len(wikis))
 	for _, wiki := range wikis {
 		go worker(wiki)
 	}
@@ -195,27 +192,38 @@ func generateWikis(wikis []*wiki.Wiki, regen, clean, watch bool, version string)
 		// When watching, workers never complete normally - only wait for errors or termination
 		select {
 		case err := <-errorChan:
-			cancel() // Cancel all workers
+			cancel()  // Cancel all workers
+			wg.Wait() // Wait for workers to finish cleanup
 			return err
 		case <-termChan:
 			fmt.Println("Terminate signal received. Exiting...")
-			cancel() // Cancel all workers
+			cancel()  // Cancel all workers
+			wg.Wait() // Wait for workers to finish cleanup
 			return nil
 		}
 	} else {
 		// When not watching, wait for all workers to complete
-		workersCount := len(wikis)
+		// Use a goroutine to wait for all workers
+		done := make(chan struct{})
+		go func() {
+			wg.Wait()
+			close(done)
+		}()
+
 		var err error
-		for workersCount > 0 && err == nil {
+		for err == nil {
 			select {
-			case <-doneChan:
-				workersCount--
+			case <-done:
+				// All workers completed
+				return nil
 			case err = <-errorChan:
-				cancel() // Cancel all workers
+				cancel()  // Cancel all workers
+				wg.Wait() // Wait for workers to finish cleanup
 				return err
 			case <-termChan:
 				fmt.Println("Terminate signal received. Exiting...")
-				cancel() // Cancel all workers
+				cancel()  // Cancel all workers
+				wg.Wait() // Wait for workers to finish cleanup
 				return nil
 			}
 		}

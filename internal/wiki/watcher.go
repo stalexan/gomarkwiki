@@ -64,7 +64,7 @@ type Watcher struct {
 
 	// Watcher instance (reused across cycles)
 	fsWatcher *fsnotify.Watcher
-	mu        sync.Mutex // Protects all fsWatcher access
+	mu        sync.Mutex // Protects fsWatcher, snapshot, and subsModTime
 
 	// Current state
 	snapshot    []fileSnapshot
@@ -74,6 +74,19 @@ type Watcher struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 }
+
+// Thread Safety:
+// The mutex (mu) protects concurrent access to fsWatcher, snapshot, and subsModTime.
+// For snapshot reads, we use a "copy and release" pattern: lock, copy the slice header
+// to a local variable, then unlock immediately. This minimizes lock contention by
+// holding the lock only long enough to ensure atomic read of the slice header (pointer,
+// length, capacity). The local copy can then be used safely without holding the lock,
+// allowing other goroutines to update the snapshot concurrently. This pattern ensures:
+//   - Atomic assignment/read of the slice header (all 3 fields together)
+//   - Memory visibility (proper memory barriers for cross-goroutine visibility)
+//   - No data races (compliance with Go's memory model)
+// Note: The slice header copy shares the underlying array with the original, but since
+// we only read from it and the elements are value types, this is safe.
 
 // WatchResult represents the result of waiting for a change.
 type WatchResult struct {
@@ -159,12 +172,16 @@ func (w *Watcher) WaitForChange() (*WatchResult, error) {
 	// redundant if we just updated the snapshot, it protects against race
 	// conditions where files change during the brief window between generation
 	// completing and the next watch cycle starting.
-	if w.snapshot != nil {
+	w.mu.Lock()
+	snapshot := w.snapshot
+	w.mu.Unlock()
+
+	if snapshot != nil {
 		newSnapshot, err := takeFilesSnapshot(ctx, w.contentDir)
 		if err != nil {
 			return nil, fmt.Errorf("failed to take snapshot for %s: %v", w.contentDir, err)
 		}
-		if !filesSnapshotsAreEqual(w.snapshot, newSnapshot) {
+		if !filesSnapshotsAreEqual(snapshot, newSnapshot) {
 			util.PrintVerbose("Files changed between generation cycles. Starting update.")
 
 			// Check if substitution strings file also changed
@@ -185,8 +202,11 @@ func (w *Watcher) WaitForChange() (*WatchResult, error) {
 		// Even if content files didn't change, check if substitution strings file changed
 		if w.checkSubsFileChanged() {
 			util.PrintVerbose("Substitution strings file changed between generation cycles. Starting update.")
+			w.mu.Lock()
+			currentSnapshot := w.snapshot
+			w.mu.Unlock()
 			return &WatchResult{
-				Snapshot: w.snapshot, // No content changes, so snapshot is still valid
+				Snapshot: currentSnapshot, // No content changes, so snapshot is still valid
 				Regen:    true,
 				Timeout:  false,
 			}, nil
@@ -202,8 +222,11 @@ func (w *Watcher) WaitForChange() (*WatchResult, error) {
 	// Check if context expired (timeout for periodic regeneration)
 	if ctx.Err() == context.DeadlineExceeded {
 		util.PrintDebug("Regen timer expired for %s", w.sourceDir)
+		w.mu.Lock()
+		snapshot := w.snapshot
+		w.mu.Unlock()
 		return &WatchResult{
-			Snapshot: w.snapshot,
+			Snapshot: snapshot,
 			Regen:    false,
 			Timeout:  true,
 		}, nil
@@ -319,7 +342,10 @@ func (w *Watcher) waitForStability(ctx context.Context) ([]fileSnapshot, error) 
 		// Initial wait before first snapshot comparison (with cancellation support)
 		select {
 		case <-ctx.Done():
-			resultChan <- result{snapshot: w.snapshot}
+			w.mu.Lock()
+			snapshot := w.snapshot
+			w.mu.Unlock()
+			resultChan <- result{snapshot: snapshot}
 			return
 		case <-time.After(CHANGE_WAIT):
 		}
@@ -338,7 +364,10 @@ func (w *Watcher) waitForStability(ctx context.Context) ([]fileSnapshot, error) 
 				} else if snapshot1 != nil {
 					resultChan <- result{snapshot: snapshot1}
 				} else {
-					resultChan <- result{snapshot: w.snapshot}
+					w.mu.Lock()
+					snapshot := w.snapshot
+					w.mu.Unlock()
+					resultChan <- result{snapshot: snapshot}
 				}
 				return
 			default:
@@ -420,6 +449,8 @@ func (w *Watcher) checkSubsFileChanged() bool {
 	}
 
 	currentModTime := info.ModTime().Unix()
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if currentModTime != w.subsModTime {
 		w.subsModTime = currentModTime
 		return true
@@ -431,13 +462,17 @@ func (w *Watcher) checkSubsFileChanged() bool {
 // UpdateSnapshot updates the internal snapshot state.
 // This should be called after successful generation.
 func (w *Watcher) UpdateSnapshot(snapshot []fileSnapshot) {
+	w.mu.Lock()
 	w.snapshot = snapshot
+	w.mu.Unlock()
 	// Also update substitution strings file mod time when snapshot is updated
 	w.checkSubsFileChanged()
 }
 
 // GetSnapshot returns the current snapshot.
 func (w *Watcher) GetSnapshot() []fileSnapshot {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	return w.snapshot
 }
 

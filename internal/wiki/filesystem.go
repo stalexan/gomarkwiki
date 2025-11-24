@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/stalexan/gomarkwiki/internal/util"
 )
@@ -192,6 +193,16 @@ func isDirectoryEmpty(path string) (bool, error) {
 // deleteEmptyDirectories deletes any empty directories within path, including
 // directories that have just empty directories.
 func deleteEmptyDirectories(path string) error {
+	return deleteEmptyDirectoriesWithDepth(path, 0)
+}
+
+// deleteEmptyDirectoriesWithDepth is the internal recursive implementation that tracks depth.
+func deleteEmptyDirectoriesWithDepth(path string, depth int) error {
+	// Check recursion depth limit
+	if depth > MaxRecursionDepth {
+		return fmt.Errorf("directory recursion depth exceeded at '%s' (depth %d, max %d)", path, depth, MaxRecursionDepth)
+	}
+
 	entries, err := listDirectoryContents(path)
 	if err != nil {
 		return err
@@ -202,7 +213,7 @@ func deleteEmptyDirectories(path string) error {
 
 		if entry.IsDir() {
 			// Recursively delete empty directories in subdirectories.
-			err := deleteEmptyDirectories(entryPath)
+			err := deleteEmptyDirectoriesWithDepth(entryPath, depth+1)
 			if err != nil {
 				return err
 			}
@@ -231,12 +242,19 @@ func deleteEmptyDirectories(path string) error {
 // a corresponding source file, and by deleting any empty directories.
 func (wiki Wiki) cleanDestDir(ctx context.Context, relDestPaths map[string]bool) error {
 	// Delete dest files that don't have a corresponding source file.
+	baseDepth := strings.Count(wiki.DestDir, string(filepath.Separator))
 	err := filepath.Walk(wiki.DestDir, func(destPath string, info fs.FileInfo, err error) error {
 		// Check for cancellation periodically during walk
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
+		}
+
+		// Check recursion depth
+		currentDepth := strings.Count(destPath, string(filepath.Separator)) - baseDepth
+		if currentDepth > MaxRecursionDepth {
+			return fmt.Errorf("directory recursion depth exceeded at '%s' (depth %d, max %d)", destPath, currentDepth, MaxRecursionDepth)
 		}
 
 		// Was there an error looking up this file?

@@ -76,6 +76,18 @@ func LoadStringPairs(csvPath string) ([][2]string, error) {
 	}
 	defer file.Close()
 
+	// Check file size before reading to prevent resource exhaustion
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("unable to stat '%s': %v", csvPath, err)
+	}
+	const MaxCSVFileSize = 10 * 1024 * 1024 // 10 MB
+	const MaxSubstitutionStrings = 10000    // 10,000 pairs
+
+	if fileInfo.Size() > MaxCSVFileSize {
+		return nil, fmt.Errorf("CSV file '%s' is too large (%d bytes, max %d bytes)", csvPath, fileInfo.Size(), MaxCSVFileSize)
+	}
+
 	// Read file.
 	reader := csv.NewReader(file)
 	reader.Comma = ','
@@ -88,8 +100,13 @@ func LoadStringPairs(csvPath string) ([][2]string, error) {
 		return nil, fmt.Errorf("unable to read '%s': %v", csvPath, err)
 	}
 
+	// Check number of entries limit
+	if len(records) > MaxSubstitutionStrings {
+		return nil, fmt.Errorf("CSV file '%s' has too many entries (%d entries, max %d entries)", csvPath, len(records), MaxSubstitutionStrings)
+	}
+
 	// Save pairs.
-	result := make([][2]string, 0)
+	result := make([][2]string, 0, len(records))
 	for _, record := range records {
 		result = append(result, [2]string{record[0], record[1]})
 	}

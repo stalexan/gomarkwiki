@@ -66,6 +66,11 @@ func (wiki Wiki) generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath 
 	}
 	util.PrintVerbose("Generating '%s'", outPath)
 
+	// Check file size before reading to prevent resource exhaustion
+	if mdInfo.Size() > MaxMarkdownFileSize {
+		return "", fmt.Errorf("markdown file '%s' is too large (%d bytes, max %d bytes)", mdPath, mdInfo.Size(), MaxMarkdownFileSize)
+	}
+
 	// Read markdown file.
 	var data []byte
 	var err error
@@ -141,12 +146,20 @@ func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version st
 	util.PrintDebug("Generating wiki '%s' from '%s'", wiki.DestDir, wiki.SourceDir)
 	relDestPaths := map[string]bool{}
 	sourceFileMap := map[string]string{} // Track which source file generated each HTML path
+	fileCount := 0
+	baseDepth := strings.Count(wiki.ContentDir, string(filepath.Separator))
 	err := filepath.Walk(wiki.ContentDir, func(contentPath string, info fs.FileInfo, err error) error {
 		// Check for cancellation periodically during walk
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
+		}
+
+		// Check recursion depth
+		currentDepth := strings.Count(contentPath, string(filepath.Separator)) - baseDepth
+		if currentDepth > MaxRecursionDepth {
+			return fmt.Errorf("directory recursion depth exceeded at '%s' (depth %d, max %d)", contentPath, currentDepth, MaxRecursionDepth)
 		}
 
 		// Was there an error looking up this file?
@@ -158,6 +171,12 @@ func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version st
 		// Is this file regular and readable?
 		if !isReadableFile(info, contentPath) {
 			return nil
+		}
+
+		// Check file count limit
+		fileCount++
+		if fileCount > MaxFilesProcessed {
+			return fmt.Errorf("maximum number of files processed exceeded (%d files, max %d files)", fileCount, MaxFilesProcessed)
 		}
 
 		// Ignore this file?

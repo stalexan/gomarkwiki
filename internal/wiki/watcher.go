@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -509,12 +510,19 @@ func watchDirRecursive(ctx context.Context, path string, watcher *fsnotify.Watch
 		return fmt.Errorf("failed to watch directory '%s': '%s'", path, err)
 	}
 
+	baseDepth := strings.Count(path, string(filepath.Separator))
 	err = filepath.Walk(path, func(subPath string, info os.FileInfo, err error) error {
 		// Check for cancellation periodically during walk
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
+		}
+
+		// Check recursion depth
+		currentDepth := strings.Count(subPath, string(filepath.Separator)) - baseDepth
+		if currentDepth > MaxRecursionDepth {
+			return fmt.Errorf("directory recursion depth exceeded at '%s' (depth %d, max %d)", subPath, currentDepth, MaxRecursionDepth)
 		}
 
 		if err != nil {
@@ -535,6 +543,7 @@ func watchDirRecursive(ctx context.Context, path string, watcher *fsnotify.Watch
 // takeFilesSnapshot records the names and  modification times of all files and directories in dir recursively.
 func takeFilesSnapshot(ctx context.Context, dir string) ([]fileSnapshot, error) {
 	var snapshots []fileSnapshot
+	baseDepth := strings.Count(dir, string(filepath.Separator))
 
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		// Check for cancellation periodically during walk
@@ -542,6 +551,12 @@ func takeFilesSnapshot(ctx context.Context, dir string) ([]fileSnapshot, error) 
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
+		}
+
+		// Check recursion depth
+		currentDepth := strings.Count(path, string(filepath.Separator)) - baseDepth
+		if currentDepth > MaxRecursionDepth {
+			return fmt.Errorf("directory recursion depth exceeded at '%s' (depth %d, max %d)", path, currentDepth, MaxRecursionDepth)
 		}
 
 		if err != nil {

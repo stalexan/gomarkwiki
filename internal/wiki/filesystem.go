@@ -94,8 +94,8 @@ func (wiki Wiki) copyFileToDest(ctx context.Context, sourceInfo fs.FileInfo, sou
 		return fmt.Errorf("failed to create dest dir '%s': %v", destDirPath, err)
 	}
 
-	// Re-stat the source file right before opening to get current info and prevent TOCTOU issues.
-	currentSourceInfo, err := os.Stat(sourcePath)
+	// Re-stat the source file right before opening to prevent TOCTOU issues.
+	_, err := os.Stat(sourcePath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			util.PrintVerbose("'%s' was not copied to dest because it no longer exists", sourcePath)
@@ -118,7 +118,6 @@ func (wiki Wiki) copyFileToDest(ctx context.Context, sourceInfo fs.FileInfo, sou
 			return nil
 		}
 	}
-	_ = currentSourceInfo // Re-stat'd to prevent TOCTOU; available for future size checks if needed
 	defer source.Close()
 	if err := copyToFile(ctx, destPath, source); err != nil {
 		return err

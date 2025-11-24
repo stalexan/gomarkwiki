@@ -193,7 +193,7 @@ func generateWikis(wikis []*wiki.Wiki, regen, clean, watch bool, version string)
 	defer cancel() // Ensure cleanup on return
 
 	// Create channels to watch for errors and the terminate signal.
-	errorChan := make(chan error, len(wikis)) // Buffered to prevent blocking
+	errorChan := make(chan error, len(wikis)*2) // Buffered to prevent blocking
 	termChan := make(chan os.Signal, 1)
 	signal.Notify(termChan, os.Interrupt, syscall.SIGTERM)
 

@@ -248,6 +248,22 @@ func (w *Watcher) waitForEvent(ctx context.Context) (bool, error) {
 		}
 		util.PrintDebug("Watcher event detected for %s: %v", w.contentDir, event)
 
+		// Handle new directory creation - add it to watch list
+		if event.Has(fsnotify.Create) {
+			if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
+				w.mu.Lock()
+				if w.fsWatcher != nil {
+					if err := watchDirRecursive(event.Name, w.fsWatcher); err != nil {
+						util.PrintVerbose("Failed to watch newly created directory '%s': %v", event.Name, err)
+						// Continue anyway - snapshot comparison will catch changes
+					} else {
+						util.PrintDebug("Added newly created directory '%s' to watch list", event.Name)
+					}
+				}
+				w.mu.Unlock()
+			}
+		}
+
 		// Check if substitution strings file changed
 		regen := w.subsPath != "" &&
 			(event.Has(fsnotify.Write) || event.Has(fsnotify.Rename)) &&

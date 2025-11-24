@@ -44,18 +44,17 @@ func checkForStyleDirective(data []byte) (bool, []byte) {
 		data = data[3:]
 	}
 
-	// Trim leading whitespace (including newlines, spaces, tabs)
-	data = bytes.TrimLeft(data, " \t\n\r")
+	// Trim leading whitespace only for checking the directive
+	trimmed := bytes.TrimLeft(data, " \t\n\r")
 
-	// Check for directive
-	hasDirective := false
-	if bytes.HasPrefix(data, gitHubDirective) {
-		hasDirective = true
-		// Trim off the directive and any whitespace.
-		data = data[len(gitHubDirective):]
-		data = bytes.TrimSpace(data)
+	if bytes.HasPrefix(trimmed, gitHubDirective) {
+		// Directive found: remove it and trim trailing whitespace
+		trimmed = trimmed[len(gitHubDirective):]
+		return true, bytes.TrimSpace(trimmed)
 	}
-	return hasDirective, data
+
+	// No directive found: return original data unchanged
+	return false, data
 }
 
 // generateHtmlFromMarkdown generates an HTML file from a markdown file.

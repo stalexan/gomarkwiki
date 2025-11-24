@@ -60,15 +60,17 @@ type Watcher struct {
 	// Configuration
 	contentDir string
 	subsPath   string
+	ignorePath string
 	sourceDir  string // For error messages
 
 	// Watcher instance (reused across cycles)
 	fsWatcher *fsnotify.Watcher
-	mu        sync.Mutex // Protects fsWatcher, snapshot, and subsModTime
+	mu        sync.Mutex // Protects fsWatcher, snapshot, subsModTime, and ignoreModTime
 
 	// Current state
-	snapshot    []fileSnapshot
-	subsModTime int64 // Last known modification time of substitution strings file
+	snapshot      []fileSnapshot
+	subsModTime   int64 // Last known modification time of substitution strings file
+	ignoreModTime int64 // Last known modification time of ignore.txt file
 
 	// Context management
 	ctx    context.Context
@@ -90,14 +92,15 @@ type Watcher struct {
 
 // WatchResult represents the result of waiting for a change.
 type WatchResult struct {
-	Snapshot []fileSnapshot // New snapshot after changes stabilized
-	Regen    bool           // Whether full regeneration is needed
-	Timeout  bool           // Whether the wait timed out
+	Snapshot      []fileSnapshot // New snapshot after changes stabilized
+	Regen         bool           // Whether full regeneration is needed
+	IgnoreChanged bool           // Whether ignore.txt changed
+	Timeout       bool           // Whether the wait timed out
 }
 
 // NewWatcher creates a new Watcher instance for the given directories.
 // The parent context is used for cancellation - when it's cancelled, the watcher will stop.
-func NewWatcher(parentCtx context.Context, contentDir, subsPath, sourceDir string) (*Watcher, error) {
+func NewWatcher(parentCtx context.Context, contentDir, subsPath, ignorePath, sourceDir string) (*Watcher, error) {
 	fsWatcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create file watcher: %v", err)
@@ -122,17 +125,32 @@ func NewWatcher(parentCtx context.Context, contentDir, subsPath, sourceDir strin
 		}
 	}
 
+	// Watch ignore.txt file if provided
+	var ignoreModTime int64
+	if ignorePath != "" {
+		if err := fsWatcher.Add(ignorePath); err != nil {
+			fsWatcher.Close()
+			return nil, fmt.Errorf("failed to watch '%s': %v", ignorePath, err)
+		}
+		// Record initial modification time of ignore.txt file
+		if info, err := os.Stat(ignorePath); err == nil {
+			ignoreModTime = info.ModTime().Unix()
+		}
+	}
+
 	// Create a child context that will be cancelled when the watcher is closed
 	ctx, cancel := context.WithCancel(parentCtx)
 
 	return &Watcher{
-		contentDir:  contentDir,
-		subsPath:    subsPath,
-		sourceDir:   sourceDir,
-		fsWatcher:   fsWatcher,
-		subsModTime: subsModTime,
-		ctx:         ctx,
-		cancel:      cancel,
+		contentDir:    contentDir,
+		subsPath:      subsPath,
+		ignorePath:    ignorePath,
+		sourceDir:     sourceDir,
+		fsWatcher:     fsWatcher,
+		subsModTime:   subsModTime,
+		ignoreModTime: ignoreModTime,
+		ctx:           ctx,
+		cancel:        cancel,
 	}, nil
 }
 
@@ -184,8 +202,10 @@ func (w *Watcher) WaitForChange() (*WatchResult, error) {
 		if !filesSnapshotsAreEqual(snapshot, newSnapshot) {
 			util.PrintVerbose("Files changed between generation cycles. Starting update.")
 
-			// Check if substitution strings file also changed
-			regen := w.checkSubsFileChanged()
+			// Check if substitution strings file or ignore.txt also changed
+			subsChanged := w.checkSubsFileChanged()
+			ignoreChanged := w.checkIgnoreFileChanged()
+			regen := subsChanged || ignoreChanged
 
 			// Files changed, wait for stability and return
 			stableSnapshot, err := w.waitForStability(ctx)
@@ -193,28 +213,37 @@ func (w *Watcher) WaitForChange() (*WatchResult, error) {
 				return nil, err
 			}
 			return &WatchResult{
-				Snapshot: stableSnapshot,
-				Regen:    regen,
-				Timeout:  false,
+				Snapshot:      stableSnapshot,
+				Regen:         regen,
+				IgnoreChanged: ignoreChanged,
+				Timeout:       false,
 			}, nil
 		}
 
-		// Even if content files didn't change, check if substitution strings file changed
-		if w.checkSubsFileChanged() {
-			util.PrintVerbose("Substitution strings file changed between generation cycles. Starting update.")
+		// Even if content files didn't change, check if substitution strings file or ignore.txt changed
+		subsChanged := w.checkSubsFileChanged()
+		ignoreChanged := w.checkIgnoreFileChanged()
+		if subsChanged || ignoreChanged {
+			if subsChanged {
+				util.PrintVerbose("Substitution strings file changed between generation cycles. Starting update.")
+			}
+			if ignoreChanged {
+				util.PrintVerbose("Ignore expressions file changed between generation cycles. Starting update.")
+			}
 			w.mu.Lock()
 			currentSnapshot := w.snapshot
 			w.mu.Unlock()
 			return &WatchResult{
-				Snapshot: currentSnapshot, // No content changes, so snapshot is still valid
-				Regen:    true,
-				Timeout:  false,
+				Snapshot:      currentSnapshot, // No content changes, so snapshot is still valid
+				Regen:         true,
+				IgnoreChanged: ignoreChanged,
+				Timeout:       false,
 			}, nil
 		}
 	}
 
 	// Wait for a file system event (or timeout)
-	regen, err := w.waitForEvent(ctx)
+	regen, ignoreChanged, err := w.waitForEvent(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to watch for change event in %s: %v", w.sourceDir, err)
 	}
@@ -226,9 +255,10 @@ func (w *Watcher) WaitForChange() (*WatchResult, error) {
 		snapshot := w.snapshot
 		w.mu.Unlock()
 		return &WatchResult{
-			Snapshot: snapshot,
-			Regen:    false,
-			Timeout:  true,
+			Snapshot:      snapshot,
+			Regen:         false,
+			IgnoreChanged: false,
+			Timeout:       true,
 		}, nil
 	}
 
@@ -239,9 +269,10 @@ func (w *Watcher) WaitForChange() (*WatchResult, error) {
 	}
 
 	return &WatchResult{
-		Snapshot: stableSnapshot,
-		Regen:    regen,
-		Timeout:  false,
+		Snapshot:      stableSnapshot,
+		Regen:         regen,
+		IgnoreChanged: ignoreChanged,
+		Timeout:       false,
 	}, nil
 }
 
@@ -250,16 +281,16 @@ func (w *Watcher) WaitForChange() (*WatchResult, error) {
 // State: Idle -> EventDetected
 //
 // This method blocks until:
-//   - A file system event occurs (returns regen flag)
+//   - A file system event occurs (returns regen flag and ignoreChanged flag)
 //   - The watcher encounters an error (returns error)
-//   - The context times out (returns false, caller handles timeout)
-func (w *Watcher) waitForEvent(ctx context.Context) (bool, error) {
+//   - The context times out (returns false, false, caller handles timeout)
+func (w *Watcher) waitForEvent(ctx context.Context) (bool, bool, error) {
 	// Check context first - if already cancelled (e.g., by Close()), return early
 	// This prevents the race condition where Close() is called between
 	// releasing the lock and entering the select statement
 	select {
 	case <-ctx.Done():
-		return false, nil // Context cancelled, caller will handle
+		return false, false, nil // Context cancelled, caller will handle
 	default:
 	}
 
@@ -268,7 +299,7 @@ func (w *Watcher) waitForEvent(ctx context.Context) (bool, error) {
 	w.mu.Lock()
 	if w.fsWatcher == nil {
 		w.mu.Unlock()
-		return false, fmt.Errorf("watcher closed while waiting for event in '%s'", w.contentDir)
+		return false, false, fmt.Errorf("watcher closed while waiting for event in '%s'", w.contentDir)
 	}
 	eventsChan := w.fsWatcher.Events
 	errorsChan := w.fsWatcher.Errors
@@ -277,7 +308,7 @@ func (w *Watcher) waitForEvent(ctx context.Context) (bool, error) {
 	select {
 	case event, ok := <-eventsChan:
 		if !ok {
-			return false, fmt.Errorf("watcher unexpectedly closed while watching '%s'", w.contentDir)
+			return false, false, fmt.Errorf("watcher unexpectedly closed while watching '%s'", w.contentDir)
 		}
 		util.PrintDebug("Watcher event detected for %s: %v", w.contentDir, event)
 
@@ -297,24 +328,31 @@ func (w *Watcher) waitForEvent(ctx context.Context) (bool, error) {
 			}
 		}
 
-		// Check if substitution strings file changed
-		regen := w.subsPath != "" &&
+		// Check if substitution strings file or ignore.txt changed
+		subsChanged := w.subsPath != "" &&
 			(event.Has(fsnotify.Write) || event.Has(fsnotify.Rename)) &&
 			filepath.Clean(event.Name) == w.subsPath
-		if regen {
+		if subsChanged {
 			util.PrintVerbose("Substitution strings file '%s' write seen", w.subsPath)
 		}
 
-		return regen, nil
+		ignoreChanged := w.ignorePath != "" &&
+			(event.Has(fsnotify.Write) || event.Has(fsnotify.Rename)) &&
+			filepath.Clean(event.Name) == w.ignorePath
+		if ignoreChanged {
+			util.PrintVerbose("Ignore expressions file '%s' write seen", w.ignorePath)
+		}
+
+		return subsChanged || ignoreChanged, ignoreChanged, nil
 
 	case err, ok := <-errorsChan:
 		if !ok {
-			return false, fmt.Errorf("failed to read watcher error for %s", w.contentDir)
+			return false, false, fmt.Errorf("failed to read watcher error for %s", w.contentDir)
 		}
-		return false, fmt.Errorf("watcher error for %s: %v", w.contentDir, err)
+		return false, false, fmt.Errorf("watcher error for %s: %v", w.contentDir, err)
 
 	case <-ctx.Done():
-		return false, nil // Timeout, caller will handle
+		return false, false, nil // Timeout, caller will handle
 	}
 }
 
@@ -465,14 +503,41 @@ func (w *Watcher) checkSubsFileChanged() bool {
 	return false
 }
 
+// checkIgnoreFileChanged checks if the ignore.txt file has been modified
+// since it was last recorded. Returns true if the file changed, and updates
+// the stored modification time.
+func (w *Watcher) checkIgnoreFileChanged() bool {
+	if w.ignorePath == "" {
+		return false
+	}
+
+	info, err := os.Stat(w.ignorePath)
+	if err != nil {
+		// File might have been deleted or is inaccessible
+		// Don't update mod time, but don't trigger regen either
+		return false
+	}
+
+	currentModTime := info.ModTime().Unix()
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if currentModTime != w.ignoreModTime {
+		w.ignoreModTime = currentModTime
+		return true
+	}
+
+	return false
+}
+
 // UpdateSnapshot updates the internal snapshot state.
 // This should be called after successful generation.
 func (w *Watcher) UpdateSnapshot(snapshot []fileSnapshot) {
 	w.mu.Lock()
 	w.snapshot = snapshot
 	w.mu.Unlock()
-	// Also update substitution strings file mod time when snapshot is updated
+	// Also update substitution strings file and ignore.txt mod times when snapshot is updated
 	w.checkSubsFileChanged()
+	w.checkIgnoreFileChanged()
 }
 
 // GetSnapshot returns the current snapshot.
@@ -487,7 +552,7 @@ func (wiki *Wiki) watch(ctx context.Context, clean bool, version string) error {
 	util.PrintVerbose("Watching for changes in '%s'", wiki.ContentDir)
 
 	// Create watcher with parent context
-	watcher, err := NewWatcher(ctx, wiki.ContentDir, wiki.subsPath, wiki.SourceDir)
+	watcher, err := NewWatcher(ctx, wiki.ContentDir, wiki.subsPath, wiki.ignorePath, wiki.SourceDir)
 	if err != nil {
 		return fmt.Errorf("failed to create watcher: %v", err)
 	}
@@ -521,13 +586,22 @@ func (wiki *Wiki) watch(ctx context.Context, clean bool, version string) error {
 
 		// Update snapshot
 		watcher.UpdateSnapshot(result.Snapshot)
-		// Note: UpdateSnapshot also updates subsModTime if subs file changed
+		// Note: UpdateSnapshot also updates subsModTime and ignoreModTime if files changed
 
 		// Reload substitution strings if needed
 		if result.Regen {
 			util.PrintVerbose("Reloading substitution strings from '%s'", wiki.subsPath)
 			if err := wiki.loadSubstitutionStrings(); err != nil {
 				return fmt.Errorf("failed to reload substitution strings file: %v", err)
+			}
+			// Mod time already updated by UpdateSnapshot above
+		}
+
+		// Reload ignore expressions if needed
+		if result.IgnoreChanged {
+			util.PrintVerbose("Reloading ignore expressions from '%s'", wiki.ignorePath)
+			if err := wiki.loadIgnoreExpressions(); err != nil {
+				return fmt.Errorf("failed to reload ignore expressions file: %v", err)
 			}
 			// Mod time already updated by UpdateSnapshot above
 		}

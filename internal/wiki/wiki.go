@@ -22,7 +22,8 @@ type Wiki struct {
 	subStrings [][2]string // Substitution strings. Each pair is the string to look for and what to replace it with.
 	subsPath   string      // Path to substitution strings file.
 
-	ignore []*regexp.Regexp // Which files to ingore
+	ignore     []*regexp.Regexp // Which files to ingore
+	ignorePath string           // Path to ignore.txt file.
 }
 
 // NewWiki constructs a new instance of Wiki.
@@ -81,6 +82,7 @@ func NewWiki(sourceDir, destDir string) (*Wiki, error) {
 		subStrings: nil,
 		subsPath:   "",
 		ignore:     nil,
+		ignorePath: "",
 	}
 
 	// Check that the dirs in Wiki exist.

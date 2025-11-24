@@ -122,6 +122,10 @@ func (wiki Wiki) makeSubstitutions(data []byte) []byte {
 
 // loadIngoreExpressions loads regular expressions that define which files to ingore.
 func (wiki *Wiki) loadIgnoreExpressions() error {
+	// Start with no ignore expressions.
+	wiki.ignore = nil
+	wiki.ignorePath = ""
+
 	// Open ingore file, if there is one.
 	const ignoreFileName = "ignore.txt"
 	ignorePath := filepath.Join(wiki.SourceDir, ignoreFileName)
@@ -136,6 +140,9 @@ func (wiki *Wiki) loadIgnoreExpressions() error {
 		}
 	}
 	defer file.Close()
+
+	// There's an ignore file. Remember its path.
+	wiki.ignorePath = filepath.Clean(ignorePath)
 
 	// Read expressions.
 	scanner := bufio.NewScanner(file)

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -154,6 +155,36 @@ func main() {
 	os.Exit(0)
 }
 
+// collectAllErrors drains the error channel and collects all errors.
+func collectAllErrors(errorChan chan error) []error {
+	var errors []error
+	for {
+		select {
+		case err := <-errorChan:
+			errors = append(errors, err)
+		default:
+			// No more errors in channel
+			return errors
+		}
+	}
+}
+
+// formatErrors formats multiple errors into a single error message.
+func formatErrors(errs []error) error {
+	if len(errs) == 0 {
+		return nil
+	}
+	if len(errs) == 1 {
+		return errs[0]
+	}
+	// Multiple errors - combine them
+	msg := fmt.Sprintf("multiple errors occurred (%d total):", len(errs))
+	for i, err := range errs {
+		msg += fmt.Sprintf("\n  %d. %v", i+1, err)
+	}
+	return errors.New(msg)
+}
+
 // generateWikis generates the wikis and then optionally watch watches for
 // changes in each wiki to regenerate files on the fly.
 func generateWikis(wikis []*wiki.Wiki, regen, clean, watch bool, version string) error {
@@ -194,7 +225,10 @@ func generateWikis(wikis []*wiki.Wiki, regen, clean, watch bool, version string)
 		case err := <-errorChan:
 			cancel()  // Cancel all workers
 			wg.Wait() // Wait for workers to finish cleanup
-			return err
+			// Collect all errors that occurred
+			errors := collectAllErrors(errorChan)
+			errors = append([]error{err}, errors...) // Prepend the first error
+			return formatErrors(errors)
 		case <-termChan:
 			fmt.Println("Terminate signal received. Exiting...")
 			cancel()  // Cancel all workers
@@ -210,16 +244,19 @@ func generateWikis(wikis []*wiki.Wiki, regen, clean, watch bool, version string)
 			close(done)
 		}()
 
-		var err error
-		for err == nil {
+		for {
 			select {
 			case <-done:
-				// All workers completed
-				return nil
-			case err = <-errorChan:
+				// All workers completed - check if any errors occurred
+				errs := collectAllErrors(errorChan)
+				return formatErrors(errs)
+			case firstErr := <-errorChan:
 				cancel()  // Cancel all workers
 				wg.Wait() // Wait for workers to finish cleanup
-				return err
+				// Collect all remaining errors
+				errs := collectAllErrors(errorChan)
+				errs = append([]error{firstErr}, errs...) // Prepend the first error
+				return formatErrors(errs)
 			case <-termChan:
 				fmt.Println("Terminate signal received. Exiting...")
 				cancel()  // Cancel all workers
@@ -227,6 +264,5 @@ func generateWikis(wikis []*wiki.Wiki, regen, clean, watch bool, version string)
 				return nil
 			}
 		}
-		return nil
 	}
 }

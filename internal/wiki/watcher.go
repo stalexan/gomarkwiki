@@ -90,7 +90,7 @@ func NewWatcher(parentCtx context.Context, contentDir, subsPath, sourceDir strin
 	}
 
 	// Set up recursive watching
-	if err := watchDirRecursive(contentDir, fsWatcher); err != nil {
+	if err := watchDirRecursive(parentCtx, contentDir, fsWatcher); err != nil {
 		fsWatcher.Close()
 		return nil, fmt.Errorf("failed to initialize watcher for %s: %v", contentDir, err)
 	}
@@ -159,7 +159,7 @@ func (w *Watcher) WaitForChange() (*WatchResult, error) {
 	// conditions where files change during the brief window between generation
 	// completing and the next watch cycle starting.
 	if w.snapshot != nil {
-		newSnapshot, err := takeFilesSnapshot(w.contentDir)
+		newSnapshot, err := takeFilesSnapshot(ctx, w.contentDir)
 		if err != nil {
 			return nil, fmt.Errorf("failed to take snapshot for %s: %v", w.contentDir, err)
 		}
@@ -262,7 +262,7 @@ func (w *Watcher) waitForEvent(ctx context.Context) (bool, error) {
 			if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
 				w.mu.Lock()
 				if w.fsWatcher != nil {
-					if err := watchDirRecursive(event.Name, w.fsWatcher); err != nil {
+					if err := watchDirRecursive(ctx, event.Name, w.fsWatcher); err != nil {
 						util.PrintVerbose("Failed to watch newly created directory '%s': %v", event.Name, err)
 						// Continue anyway - snapshot comparison will catch changes
 					} else {
@@ -315,8 +315,13 @@ func (w *Watcher) waitForStability(ctx context.Context) ([]fileSnapshot, error) 
 	go func() {
 		defer close(resultChan)
 
-		// Initial wait before first snapshot comparison
-		time.Sleep(CHANGE_WAIT)
+		// Initial wait before first snapshot comparison (with cancellation support)
+		select {
+		case <-ctx.Done():
+			resultChan <- result{snapshot: w.snapshot}
+			return
+		case <-time.After(CHANGE_WAIT):
+		}
 
 		var snapshot1, snapshot2 []fileSnapshot
 		var err error
@@ -350,7 +355,7 @@ func (w *Watcher) waitForStability(ctx context.Context) ([]fileSnapshot, error) 
 			if snapshot2 != nil {
 				snapshot1 = snapshot2
 			} else {
-				snapshot1, err = takeFilesSnapshot(w.contentDir)
+				snapshot1, err = takeFilesSnapshot(ctx, w.contentDir)
 				if err != nil {
 					resultChan <- result{err: fmt.Errorf("failed to take files snapshot for %s: %v", w.contentDir, err)}
 					return
@@ -377,7 +382,7 @@ func (w *Watcher) waitForStability(ctx context.Context) ([]fileSnapshot, error) 
 			}
 
 			// Take after snapshot
-			snapshot2, err = takeFilesSnapshot(w.contentDir)
+			snapshot2, err = takeFilesSnapshot(ctx, w.contentDir)
 			if err != nil {
 				resultChan <- result{err: fmt.Errorf("failed to take files snapshot for %s: %v", w.contentDir, err)}
 				return
@@ -447,7 +452,7 @@ func (wiki *Wiki) watch(ctx context.Context, clean bool, version string) error {
 	defer watcher.Close()
 
 	// Take initial snapshot
-	initialSnapshot, err := takeFilesSnapshot(wiki.ContentDir)
+	initialSnapshot, err := takeFilesSnapshot(ctx, wiki.ContentDir)
 	if err != nil {
 		return fmt.Errorf("failed to take initial snapshot: %v", err)
 	}
@@ -491,22 +496,27 @@ func (wiki *Wiki) watch(ctx context.Context, clean bool, version string) error {
 		}
 
 		// Update wiki
-		if err = wiki.generate(result.Regen, clean, version); err != nil {
+		if err = wiki.generate(ctx, result.Regen, clean, version); err != nil {
 			return fmt.Errorf("failed to update %s wiki: %v", wiki.SourceDir, err)
 		}
 	}
 }
 
 // watchDirRecursive sets up watches on the specified directory and all subdirectories recursively.
-
-// watchDirRecursive sets up watches on the specified directory and all subdirectories recursively.
-func watchDirRecursive(path string, watcher *fsnotify.Watcher) error {
+func watchDirRecursive(ctx context.Context, path string, watcher *fsnotify.Watcher) error {
 	err := watcher.Add(path)
 	if err != nil {
 		return fmt.Errorf("failed to watch directory '%s': '%s'", path, err)
 	}
 
 	err = filepath.Walk(path, func(subPath string, info os.FileInfo, err error) error {
+		// Check for cancellation periodically during walk
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		if err != nil {
 			return err
 		}
@@ -523,10 +533,17 @@ func watchDirRecursive(path string, watcher *fsnotify.Watcher) error {
 }
 
 // takeFilesSnapshot records the names and  modification times of all files and directories in dir recursively.
-func takeFilesSnapshot(dir string) ([]fileSnapshot, error) {
+func takeFilesSnapshot(ctx context.Context, dir string) ([]fileSnapshot, error) {
 	var snapshots []fileSnapshot
 
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		// Check for cancellation periodically during walk
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		if err != nil {
 			return err
 		}

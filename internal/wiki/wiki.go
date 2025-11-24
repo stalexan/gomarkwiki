@@ -117,7 +117,7 @@ func (wiki *Wiki) Generate(ctx context.Context, regen, clean, watch bool, versio
 	}
 
 	// Generate wiki.
-	if err := wiki.generate(regen, clean, version); err != nil {
+	if err := wiki.generate(ctx, regen, clean, version); err != nil {
 		return fmt.Errorf("failed to generate wiki '%s': %v", wiki.SourceDir, err)
 	}
 
@@ -136,22 +136,37 @@ func (wiki *Wiki) Generate(ctx context.Context, regen, clean, watch bool, versio
 }
 
 // generate generates the wiki.
-func (wiki *Wiki) generate(regen, clean bool, version string) error {
+func (wiki *Wiki) generate(ctx context.Context, regen, clean bool, version string) error {
+	// Check for cancellation before starting
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
 	// Generate the part of the wiki that comes from content found in the source dir.
 	var relDestPaths map[string]bool
 	var err error
-	if relDestPaths, err = wiki.generateFromContent(regen, version); err != nil {
+	if relDestPaths, err = wiki.generateFromContent(ctx, regen, version); err != nil {
 		return err
 	}
 
+	// Check for cancellation before copying CSS files
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
 	// Copy css files to destDir.
-	if err = wiki.copyCssFiles(relDestPaths); err != nil {
+	if err = wiki.copyCssFiles(ctx, relDestPaths); err != nil {
 		return err
+	}
+
+	// Check for cancellation before cleaning
+	if ctx.Err() != nil {
+		return ctx.Err()
 	}
 
 	// Clean dest dir.
 	if clean {
-		if err = wiki.cleanDestDir(relDestPaths); err != nil {
+		if err = wiki.cleanDestDir(ctx, relDestPaths); err != nil {
 			return fmt.Errorf("failed to clean dest dir '%s': %v", wiki.DestDir, err)
 		}
 	}

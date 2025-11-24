@@ -3,6 +3,7 @@ package wiki
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"io/fs"
@@ -45,7 +46,7 @@ func destIsOlder(sourceInfo fs.FileInfo, destPath string) bool {
 }
 
 // copyToFile copies source to the file at destPath, overwriting destPath if it exists.
-func copyToFile(destPath string, source io.Reader) (err error) {
+func copyToFile(ctx context.Context, destPath string, source io.Reader) (err error) {
 	// Create and open dest file. Truncate it if it exists.
 	var destFile *os.File
 	if destFile, err = os.Create(destPath); err != nil {
@@ -58,6 +59,7 @@ func copyToFile(destPath string, source io.Reader) (err error) {
 	}()
 
 	// Copy source to destFile.
+	// Note: io.Copy is fast for typical file sizes, so we don't check context during copy.
 	if _, err = io.Copy(destFile, source); err != nil {
 		return fmt.Errorf("failed to write to '%s': %v", destPath, err)
 	}
@@ -66,7 +68,14 @@ func copyToFile(destPath string, source io.Reader) (err error) {
 }
 
 // copyFileToDest copies a file from the source dir to the dest dir.
-func (wiki Wiki) copyFileToDest(sourceInfo fs.FileInfo, sourcePath, sourceRelPath string, regen bool) error {
+func (wiki Wiki) copyFileToDest(ctx context.Context, sourceInfo fs.FileInfo, sourcePath, sourceRelPath string, regen bool) error {
+	// Check for cancellation before starting
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	// Skip copying if source is older than dest.
 	destPath := filepath.Join(wiki.DestDir, sourceRelPath)
 	if !regen && destIsOlder(sourceInfo, destPath) {
@@ -95,7 +104,7 @@ func (wiki Wiki) copyFileToDest(sourceInfo fs.FileInfo, sourcePath, sourceRelPat
 		}
 	}
 	defer source.Close()
-	if err := copyToFile(destPath, source); err != nil {
+	if err := copyToFile(ctx, destPath, source); err != nil {
 		return err
 	}
 
@@ -103,7 +112,7 @@ func (wiki Wiki) copyFileToDest(sourceInfo fs.FileInfo, sourcePath, sourceRelPat
 }
 
 // copyCssFile copies the embedded css `file` to dest dir.
-func (wiki *Wiki) copyCssFile(file string) error {
+func (wiki *Wiki) copyCssFile(ctx context.Context, file string) error {
 	// Read file
 	var css []byte
 	var err error
@@ -115,7 +124,7 @@ func (wiki *Wiki) copyCssFile(file string) error {
 	// Copy file
 	destPath := fmt.Sprintf("%s/%s", wiki.DestDir, file)
 	util.PrintVerbose("Copying '%s' to '%s'", sourcePath, destPath)
-	if err := copyToFile(destPath, bytes.NewReader(css)); err != nil {
+	if err := copyToFile(ctx, destPath, bytes.NewReader(css)); err != nil {
 		return err
 	}
 
@@ -123,7 +132,7 @@ func (wiki *Wiki) copyCssFile(file string) error {
 }
 
 // copyCssFiles copies CSS files to dest dir.
-func (wiki *Wiki) copyCssFiles(relDestPaths map[string]bool) error {
+func (wiki *Wiki) copyCssFiles(ctx context.Context, relDestPaths map[string]bool) error {
 	// Don't delete css files even though they don't have a corresponding
 	// file in the source dir.
 	cssFiles := []string{"style.css", "github-style.css"}
@@ -138,7 +147,13 @@ func (wiki *Wiki) copyCssFiles(relDestPaths map[string]bool) error {
 
 	// Copy CSS files.
 	for _, cssFile := range cssFiles {
-		if err := wiki.copyCssFile(cssFile); err != nil {
+		// Check for cancellation before each file
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		if err := wiki.copyCssFile(ctx, cssFile); err != nil {
 			return err
 		}
 	}
@@ -214,9 +229,16 @@ func deleteEmptyDirectories(path string) error {
 
 // cleanDestDir cleans the dest dir by any deleting files that don't have
 // a corresponding source file, and by deleting any empty directories.
-func (wiki Wiki) cleanDestDir(relDestPaths map[string]bool) error {
+func (wiki Wiki) cleanDestDir(ctx context.Context, relDestPaths map[string]bool) error {
 	// Delete dest files that don't have a corresponding source file.
 	err := filepath.Walk(wiki.DestDir, func(destPath string, info fs.FileInfo, err error) error {
+		// Check for cancellation periodically during walk
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		// Was there an error looking up this file?
 		if err != nil {
 			return err
@@ -246,6 +268,13 @@ func (wiki Wiki) cleanDestDir(relDestPaths map[string]bool) error {
 	})
 	if err != nil {
 		return fmt.Errorf("cleaning destination failed: %v", err)
+	}
+
+	// Check for cancellation before deleting empty directories
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
 	}
 
 	// Delete empty directories.

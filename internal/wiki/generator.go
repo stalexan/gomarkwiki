@@ -3,6 +3,7 @@ package wiki
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io/fs"
 	"os"
@@ -135,12 +136,19 @@ func (wiki Wiki) generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath 
 }
 
 // generateFromContent generates the part of the wiki that comes from the source content.
-func (wiki Wiki) generateFromContent(regen bool, version string) (map[string]bool, error) {
+func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version string) (map[string]bool, error) {
 	// Walk the source directory and generate the wiki from the files found.
 	util.PrintDebug("Generating wiki '%s' from '%s'", wiki.DestDir, wiki.SourceDir)
 	relDestPaths := map[string]bool{}
 	sourceFileMap := map[string]string{} // Track which source file generated each HTML path
 	err := filepath.Walk(wiki.ContentDir, func(contentPath string, info fs.FileInfo, err error) error {
+		// Check for cancellation periodically during walk
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		// Was there an error looking up this file?
 		if err != nil {
 			util.PrintError(err, "failed to lookup info on '%s'", contentPath)
@@ -192,7 +200,7 @@ func (wiki Wiki) generateFromContent(regen bool, version string) (map[string]boo
 			}
 		} else {
 			// This is not a markdown file. Just copy it.
-			if err := wiki.copyFileToDest(info, contentPath, relContentPath, regen); err != nil {
+			if err := wiki.copyFileToDest(ctx, info, contentPath, relContentPath, regen); err != nil {
 				util.PrintError(err, "failed to copy '%s' to dest", contentPath)
 				return nil
 			}

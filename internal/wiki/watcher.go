@@ -230,6 +230,15 @@ func (w *Watcher) WaitForChange() (*WatchResult, error) {
 //   - The watcher encounters an error (returns error)
 //   - The context times out (returns false, caller handles timeout)
 func (w *Watcher) waitForEvent(ctx context.Context) (bool, error) {
+	// Check context first - if already cancelled (e.g., by Close()), return early
+	// This prevents the race condition where Close() is called between
+	// releasing the lock and entering the select statement
+	select {
+	case <-ctx.Done():
+		return false, nil // Context cancelled, caller will handle
+	default:
+	}
+
 	// Get references to channels while holding the lock to prevent
 	// concurrent Close() from causing a race condition
 	w.mu.Lock()

@@ -21,17 +21,20 @@ func isReadableFile(info fs.FileInfo, path string) bool {
 		return false
 	}
 
-	// Is the file regular and readable?
+	// Is the file regular?
 	mode := info.Mode()
-	if mode.IsRegular() || (mode&os.ModeSymlink != 0) {
-		if mode.Perm()&(1<<2) == 0 {
-			util.PrintWarning("Skipping not readable file '%s'", path)
-			return false
-		}
-	} else {
+	if !mode.IsRegular() && (mode&os.ModeSymlink == 0) {
 		util.PrintWarning("Skipping not regular file '%s'", path)
 		return false
 	}
+
+	// Check readability by attempting to open the file.
+	file, err := os.Open(path)
+	if err != nil {
+		util.PrintWarning("Skipping not readable file '%s': %v", path, err)
+		return false
+	}
+	file.Close()
 
 	// This is readable file.
 	return true

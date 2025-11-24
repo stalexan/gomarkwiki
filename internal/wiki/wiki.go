@@ -68,6 +68,14 @@ func NewWiki(sourceDir, destDir string) (*Wiki, error) {
 		}
 	}
 
+	// Check that source directory is not under dest directory
+	relPath2, err2 := filepath.Rel(evalDestDir, evalSourceDir)
+	if err2 == nil {
+		if relPath2 != "." && !strings.HasPrefix(relPath2, "..") {
+			return nil, fmt.Errorf("source directory '%s' cannot be under destination directory '%s'", sourceDir, destDir)
+		}
+	}
+
 	wiki := Wiki{
 		SourceDir:          sourceDir,
 		ContentDir:         filepath.Join(sourceDir, "content"),

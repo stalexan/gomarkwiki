@@ -29,7 +29,20 @@ func isReadableFile(info fs.FileInfo, path string) bool {
 		util.PrintWarning("Skipping not regular file '%s'", path)
 		return false
 	}
-	// Symlinks are allowed and will be validated by os.Open below (which will fail for dead symlinks).
+
+	// If it's a symlink, verify the target is a regular file.
+	// os.Stat follows symlinks, so this checks the target's type.
+	if isSymlink {
+		targetInfo, err := os.Stat(path)
+		if err != nil {
+			util.PrintWarning("Skipping symlink with unresolvable target '%s': %v", path, err)
+			return false
+		}
+		if !targetInfo.Mode().IsRegular() {
+			util.PrintWarning("Skipping symlink to non-regular file '%s'", path)
+			return false
+		}
+	}
 
 	// Check readability by attempting to open the file.
 	file, err := os.Open(path)

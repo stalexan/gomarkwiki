@@ -28,13 +28,10 @@ const (
 
 // validatePlaceholder validates a placeholder name according to the rules:
 // - Must not be empty
-// - Must not have leading or trailing whitespace
 // - Must be at most 100 characters
 // - Must contain at least one letter or digit
 // - Can only contain letters, digits, underscore, and hyphen
 func validatePlaceholder(placeholder string) error {
-	placeholder = strings.TrimSpace(placeholder)
-
 	if len(placeholder) == 0 {
 		return fmt.Errorf("placeholder cannot be empty")
 	}

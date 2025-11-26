@@ -173,6 +173,7 @@ func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version st
 	sourceFileMap := map[string]string{} // Track which source file generated each HTML path
 	fileCount := 0
 	baseDepth := strings.Count(wiki.ContentDir, string(filepath.Separator))
+	var processingErrors []error
 	err := filepath.Walk(wiki.ContentDir, func(contentPath string, info fs.FileInfo, err error) error {
 		// Check for cancellation periodically during walk
 		select {
@@ -190,6 +191,7 @@ func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version st
 		// Was there an error looking up this file?
 		if err != nil {
 			util.PrintError(err, "failed to lookup info on '%s'", contentPath)
+			processingErrors = append(processingErrors, fmt.Errorf("failed to lookup info on '%s': %w", contentPath, err))
 			return nil
 		}
 
@@ -215,6 +217,7 @@ func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version st
 		relContentPath, err = filepath.Rel(wiki.ContentDir, contentPath)
 		if err != nil {
 			util.PrintError(err, "failed to find relative path of '%s' given '%s'", contentPath, wiki.ContentDir)
+			processingErrors = append(processingErrors, fmt.Errorf("failed to find relative path of '%s': %w", contentPath, err))
 			return nil
 		}
 
@@ -235,6 +238,7 @@ func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version st
 			relDestPath, err = wiki.generateHtmlFromMarkdown(info, contentPath, relContentPath, relDestPath, regen, version)
 			if err != nil {
 				util.PrintError(err, "failed to generate HTML for '%s'", contentPath)
+				processingErrors = append(processingErrors, fmt.Errorf("failed to generate HTML for '%s': %w", contentPath, err))
 				return nil
 			}
 
@@ -246,6 +250,7 @@ func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version st
 			// This is not a markdown file. Just copy it.
 			if err := wiki.copyFileToDest(ctx, info, contentPath, relContentPath, regen); err != nil {
 				util.PrintError(err, "failed to copy '%s' to dest", contentPath)
+				processingErrors = append(processingErrors, fmt.Errorf("failed to copy '%s': %w", contentPath, err))
 				return nil
 			}
 			relDestPath = relContentPath
@@ -260,6 +265,15 @@ func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version st
 	})
 	if err != nil {
 		return nil, fmt.Errorf("generate destination content failed: %v", err)
+	}
+
+	// Return collected processing errors if any occurred
+	if len(processingErrors) > 0 {
+		errMsg := fmt.Sprintf("failed to process %d file(s)", len(processingErrors))
+		for i, e := range processingErrors {
+			errMsg += fmt.Sprintf("\n  %d. %v", i+1, e)
+		}
+		return relDestPaths, fmt.Errorf(errMsg)
 	}
 
 	return relDestPaths, nil

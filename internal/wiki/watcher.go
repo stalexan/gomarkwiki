@@ -613,7 +613,10 @@ func (wiki *Wiki) watch(ctx context.Context, clean bool, version string) error {
 
 		// Update wiki
 		if err = wiki.generate(ctx, result.Regen, clean, version); err != nil {
-			return fmt.Errorf("failed to update %s wiki: %v", wiki.SourceDir, err)
+			// In watch mode, log the error but continue watching
+			util.PrintError(err, "failed to update %s wiki", wiki.SourceDir)
+			// Continue the loop instead of returning
+			continue
 		}
 	}
 }

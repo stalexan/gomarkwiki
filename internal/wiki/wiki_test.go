@@ -237,6 +237,78 @@ func TestCollisionDetectionDeterministic(t *testing.T) {
 	success = true
 }
 
+// TestIgnoreFileSkipsBlankAndCommentLines ensures ignore.txt parsing skips blank/comment lines.
+func TestIgnoreFileSkipsBlankAndCommentLines(t *testing.T) {
+	var err error
+
+	// Create temp dir for test
+	testCaseTempDir, err := os.MkdirTemp(tempDir, "ignore-test")
+	if err != nil {
+		t.Fatalf("Error creating test case temp directory: %v", err)
+	}
+	defer func() {
+		t.Logf("Removing test case temp directory %s", testCaseTempDir)
+		if err := os.RemoveAll(testCaseTempDir); err != nil {
+			t.Fatalf("Error removing test case temp directory: %v", err)
+		}
+	}()
+
+	sourceDir := filepath.Join(testCaseTempDir, "source")
+	contentDir := filepath.Join(sourceDir, "content")
+	staticDir := filepath.Join(sourceDir, "static")
+	outputDir := filepath.Join(testCaseTempDir, "output")
+
+	for _, dir := range []string{contentDir, staticDir, outputDir} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatalf("Failed to create directory %s: %v", dir, err)
+		}
+	}
+
+	// Required static files for generation
+	if err := copyFile(stylePath, staticDir); err != nil {
+		t.Fatalf("Failed to copy style.css: %v", err)
+	}
+	if err := copyFile(githubStylePath, staticDir); err != nil {
+		t.Fatalf("Failed to copy github-style.css: %v", err)
+	}
+
+	// Create content files
+	keepMarkdown := filepath.Join(contentDir, "keep.md")
+	if err := os.WriteFile(keepMarkdown, []byte("# Keep\nThis file should be processed."), 0644); err != nil {
+		t.Fatalf("Failed to create markdown file: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(contentDir, "skip.tmp"), []byte("tmp"), 0644); err != nil {
+		t.Fatalf("Failed to create tmp file: %v", err)
+	}
+
+	ignoreContents := "# Comment line should be ignored\n" +
+		"\n" +
+		"   # Another comment with leading space\n" +
+		"  \t  \n" +
+		"\\.tmp$\n"
+	if err := os.WriteFile(filepath.Join(sourceDir, "ignore.txt"), []byte(ignoreContents), 0644); err != nil {
+		t.Fatalf("Failed to write ignore.txt: %v", err)
+	}
+
+	theWiki, err := NewWiki(sourceDir, outputDir)
+	if err != nil {
+		t.Fatalf("Error creating Wiki instance: %v", err)
+	}
+
+	if err := theWiki.Generate(context.Background(), true, false, false, "test"); err != nil {
+		t.Fatalf("Error generating wiki: %v", err)
+	}
+
+	expectedHtml := filepath.Join(outputDir, "keep.html")
+	if _, err := os.Stat(expectedHtml); err != nil {
+		t.Fatalf("Expected HTML file %s not found: %v", expectedHtml, err)
+	}
+
+	if _, err := os.Stat(filepath.Join(outputDir, "skip.tmp")); err == nil {
+		t.Fatalf("skip.tmp should have been ignored and not copied to output")
+	}
+}
+
 func copyDir(dir1, dir2 string) error {
 	// Make sure dir2 doesn't exit.
 	_, err := os.Stat(dir2)

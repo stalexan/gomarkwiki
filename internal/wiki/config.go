@@ -147,6 +147,13 @@ func (wiki *Wiki) loadIgnoreExpressions() error {
 	for scanner.Scan() {
 		lineCount++
 		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+
+		// Skip blank lines or comments (lines starting with '#')
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+
 		expression, err := regexp.Compile(line)
 		if err != nil {
 			return fmt.Errorf("error compiling regular expression '%s' on line %d: %v", line, lineCount, err)

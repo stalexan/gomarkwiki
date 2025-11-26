@@ -130,10 +130,6 @@ func LoadStringPairs(csvPath string) ([][2]string, error) {
 		}
 
 		// Validate field sizes to prevent memory exhaustion from oversized fields
-		if len(record) != 2 {
-			return nil, fmt.Errorf("CSV file '%s' has invalid record at line %d: expected 2 fields, got %d", csvPath, lineNum, len(record))
-		}
-
 		field0Size := len(record[0])
 		field1Size := len(record[1])
 

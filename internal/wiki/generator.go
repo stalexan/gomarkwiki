@@ -112,7 +112,7 @@ func (wiki Wiki) generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath,
 	relPathJustDir := filepath.Dir(mdRelPath)
 	dirCount := 0
 	if relPathJustDir != "." {
-		dirCount = strings.Count(relPathJustDir, "/") + 1
+		dirCount = strings.Count(relPathJustDir, string(filepath.Separator)) + 1
 	}
 	rootRelPath := strings.Repeat("../", dirCount)
 

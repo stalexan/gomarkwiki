@@ -53,7 +53,7 @@ func checkForStyleDirective(data []byte) (bool, []byte) {
 		return true, bytes.TrimSpace(trimmed)
 	}
 
-	// No directive found: return original data unchanged
+	// No directive found: return data (BOM stripped if present, otherwise unchanged)
 	return false, data
 }
 

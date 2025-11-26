@@ -68,7 +68,7 @@ func (wiki Wiki) generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath,
 
 	// Skip generating the HTML if markdown is older than current HTML.
 	// Note: We use mdInfo here, but if the file is deleted before reading, we'll handle that below.
-	if !regen && destIsOlder(mdInfo, outPath) {
+	if !regen && sourceIsOlder(mdInfo, outPath) {
 		return relDestPath, nil
 	}
 	util.PrintVerbose("Generating '%s'", outPath)

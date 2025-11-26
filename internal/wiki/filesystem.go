@@ -40,8 +40,8 @@ func isReadableFile(info fs.FileInfo, path string) bool {
 	return true
 }
 
-// destIsOlder returns true if dest is older than source.
-func destIsOlder(sourceInfo fs.FileInfo, destPath string) bool {
+// sourceIsOlder returns true if source is older than dest (i.e., dest is newer).
+func sourceIsOlder(sourceInfo fs.FileInfo, destPath string) bool {
 	destInfo, err := os.Stat(destPath)
 	if err == nil && sourceInfo.ModTime().Before(destInfo.ModTime()) {
 		return true
@@ -83,7 +83,7 @@ func (wiki Wiki) copyFileToDest(ctx context.Context, sourceInfo fs.FileInfo, sou
 	// Skip copying if source is older than dest.
 	// Note: We use sourceInfo here, but if the file is deleted before opening, we'll handle that below.
 	destPath := filepath.Join(wiki.DestDir, sourceRelPath)
-	if !regen && destIsOlder(sourceInfo, destPath) {
+	if !regen && sourceIsOlder(sourceInfo, destPath) {
 		return nil
 	}
 

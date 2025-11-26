@@ -6,8 +6,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 const PACKAGE_DIR = "../.."
@@ -471,4 +473,579 @@ func diffDirs(dir1, dir2 string) (string, error) {
 
 	// The directories are the same.
 	return "", nil
+}
+
+// ============================================================================
+// Config Tests (config.go)
+// ============================================================================
+
+func TestValidatePlaceholder(t *testing.T) {
+	tests := []struct {
+		name        string
+		placeholder string
+		wantErr     bool
+	}{
+		{"valid simple", "FOO", false},
+		{"valid with underscore", "FOO_BAR", false},
+		{"valid with hyphen", "foo-bar", false},
+		{"valid with numbers", "foo123", false},
+		{"empty", "", true},
+		{"too long", strings.Repeat("a", 101), true},
+		{"no alphanumeric", "___", true},
+		{"contains braces", "{{FOO}}", true},
+		{"contains space", "FOO BAR", true},
+		{"contains special char", "FOO@BAR", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validatePlaceholder(tt.placeholder)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validatePlaceholder(%q) error = %v, wantErr %v", tt.placeholder, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestMakeSubstitutions(t *testing.T) {
+	wiki := Wiki{
+		subStrings: [][2]string{
+			{"{{SITE}}", "example.com"},
+			{"{{YEAR}}", "2024"},
+		},
+	}
+
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"single substitution", "Visit {{SITE}}", "Visit example.com"},
+		{"multiple substitutions", "{{SITE}} - {{YEAR}}", "example.com - 2024"},
+		{"no substitutions", "plain text", "plain text"},
+		{"repeated placeholder", "{{SITE}} and {{SITE}}", "example.com and example.com"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := wiki.makeSubstitutions([]byte(tt.input))
+			if string(got) != tt.want {
+				t.Errorf("makeSubstitutions() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIgnoreFile(t *testing.T) {
+	wiki := Wiki{
+		ignore: []*regexp.Regexp{
+			regexp.MustCompile(`\.tmp$`),
+			regexp.MustCompile(`^\.git`),
+			regexp.MustCompile(`backup`),
+		},
+	}
+
+	tests := []struct {
+		path   string
+		ignore bool
+	}{
+		{"file.tmp", true},
+		{"file.md", false},
+		{".gitignore", true},
+		{".git/config", true},
+		{"backup/file.md", true},
+		{"my-backup.md", true},
+		{"normal.md", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			if got := wiki.ignoreFile(tt.path); got != tt.ignore {
+				t.Errorf("ignoreFile(%q) = %v, want %v", tt.path, got, tt.ignore)
+			}
+		})
+	}
+}
+
+func TestLoadSubstitutionStrings(t *testing.T) {
+	tmpDir, err := os.MkdirTemp(tempDir, "subs-test")
+	if err != nil {
+		t.Fatalf("Error creating test temp directory: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	t.Run("valid substitutions", func(t *testing.T) {
+		sourceDir := filepath.Join(tmpDir, "valid-source")
+		os.MkdirAll(sourceDir, 0755)
+		csvPath := filepath.Join(sourceDir, "substitution-strings.csv")
+		if err := os.WriteFile(csvPath, []byte("SITE,example.com\nYEAR,2024"), 0644); err != nil {
+			t.Fatalf("Failed to create test file: %v", err)
+		}
+
+		wiki := &Wiki{SourceDir: sourceDir}
+		if err := wiki.loadSubstitutionStrings(); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+
+		if len(wiki.subStrings) != 2 {
+			t.Errorf("expected 2 substitution strings, got %d", len(wiki.subStrings))
+		}
+	})
+
+	t.Run("duplicate placeholders", func(t *testing.T) {
+		sourceDir := filepath.Join(tmpDir, "dup-source")
+		os.MkdirAll(sourceDir, 0755)
+		csvPath := filepath.Join(sourceDir, "substitution-strings.csv")
+		if err := os.WriteFile(csvPath, []byte("FOO,value1\nFOO,value2"), 0644); err != nil {
+			t.Fatalf("Failed to create test file: %v", err)
+		}
+
+		wiki := &Wiki{SourceDir: sourceDir}
+		err := wiki.loadSubstitutionStrings()
+		if err == nil {
+			t.Error("expected error for duplicate placeholders")
+		}
+		if !strings.Contains(err.Error(), "duplicate") {
+			t.Errorf("error should mention 'duplicate', got: %v", err)
+		}
+	})
+
+	t.Run("invalid placeholder", func(t *testing.T) {
+		sourceDir := filepath.Join(tmpDir, "invalid-source")
+		os.MkdirAll(sourceDir, 0755)
+		csvPath := filepath.Join(sourceDir, "substitution-strings.csv")
+		if err := os.WriteFile(csvPath, []byte("FOO BAR,value"), 0644); err != nil {
+			t.Fatalf("Failed to create test file: %v", err)
+		}
+
+		wiki := &Wiki{SourceDir: sourceDir}
+		err := wiki.loadSubstitutionStrings()
+		if err == nil {
+			t.Error("expected error for invalid placeholder")
+		}
+	})
+}
+
+// ============================================================================
+// Generator Tests (generator.go)
+// ============================================================================
+
+func TestIsPathMarkdown(t *testing.T) {
+	tests := []struct {
+		path string
+		want bool
+	}{
+		{"file.md", true},
+		{"file.mdwn", true},
+		{"file.markdown", true},
+		{"file.txt", false},
+		{"file.html", false},
+		{"file.MD", false}, // case sensitive
+		{"path/to/file.md", true},
+		{"file", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			if got := isPathMarkdown(tt.path); got != tt.want {
+				t.Errorf("isPathMarkdown(%q) = %v, want %v", tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRemoveFileExtension(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"file.md", "file"},
+		{"path/to/file.md", "path/to/file"},
+		{"file.tar.gz", "file.tar"},
+		{"file", "file"},
+		{".hidden", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			if got := removeFileExtension(tt.input); got != tt.want {
+				t.Errorf("removeFileExtension(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCheckForStyleDirective(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		wantStyle bool
+		wantData  string
+	}{
+		{
+			name:      "github directive at start",
+			input:     "#[style(github)]\n# Title\nContent",
+			wantStyle: true,
+			wantData:  "# Title\nContent",
+		},
+		{
+			name:      "github directive with whitespace",
+			input:     "  #[style(github)]\n# Title",
+			wantStyle: true,
+			wantData:  "# Title",
+		},
+		{
+			name:      "no directive",
+			input:     "# Title\nContent",
+			wantStyle: false,
+			wantData:  "# Title\nContent",
+		},
+		{
+			name:      "directive not at start",
+			input:     "# Title\n#[style(github)]",
+			wantStyle: false,
+			wantData:  "# Title\n#[style(github)]",
+		},
+		{
+			name:      "with BOM",
+			input:     "\xef\xbb\xbf#[style(github)]\nContent",
+			wantStyle: true,
+			wantData:  "Content",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotStyle, gotData := checkForStyleDirective([]byte(tt.input))
+			if gotStyle != tt.wantStyle {
+				t.Errorf("style = %v, want %v", gotStyle, tt.wantStyle)
+			}
+			if string(gotData) != tt.wantData {
+				t.Errorf("data = %q, want %q", gotData, tt.wantData)
+			}
+		})
+	}
+}
+
+// ============================================================================
+// Filesystem Tests (filesystem.go)
+// ============================================================================
+
+func TestSourceIsOlder(t *testing.T) {
+	// Create temp directory
+	tmpDir, err := os.MkdirTemp(tempDir, "test-source-older")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	t.Run("source newer than dest", func(t *testing.T) {
+		// Create older dest file
+		destPath := filepath.Join(tmpDir, "dest1.txt")
+		oldTime := time.Now().Add(-2 * time.Second)
+		if err := os.WriteFile(destPath, []byte("dest"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		os.Chtimes(destPath, oldTime, oldTime)
+
+		time.Sleep(100 * time.Millisecond) // Ensure timestamps differ
+
+		// Create source file
+		sourcePath := filepath.Join(tmpDir, "source1.txt")
+		if err := os.WriteFile(sourcePath, []byte("source"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		sourceInfo, _ := os.Stat(sourcePath)
+
+		if sourceIsOlder(sourceInfo, destPath) {
+			t.Error("expected source to be newer than dest")
+		}
+	})
+
+	t.Run("dest does not exist", func(t *testing.T) {
+		sourcePath := filepath.Join(tmpDir, "source2.txt")
+		if err := os.WriteFile(sourcePath, []byte("source"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		sourceInfo, _ := os.Stat(sourcePath)
+
+		if sourceIsOlder(sourceInfo, filepath.Join(tmpDir, "nonexistent.txt")) {
+			t.Error("expected false when dest doesn't exist")
+		}
+	})
+}
+
+func TestIsDirectoryEmpty(t *testing.T) {
+	tmpDir, err := os.MkdirTemp(tempDir, "test-empty-dir")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	t.Run("empty directory", func(t *testing.T) {
+		emptyDir := filepath.Join(tmpDir, "empty")
+		os.Mkdir(emptyDir, 0755)
+		isEmpty, err := isDirectoryEmpty(emptyDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !isEmpty {
+			t.Error("expected directory to be empty")
+		}
+	})
+
+	t.Run("non-empty directory", func(t *testing.T) {
+		nonEmptyDir := filepath.Join(tmpDir, "nonempty")
+		os.Mkdir(nonEmptyDir, 0755)
+		os.WriteFile(filepath.Join(nonEmptyDir, "file.txt"), []byte("content"), 0644)
+		isEmpty, err := isDirectoryEmpty(nonEmptyDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if isEmpty {
+			t.Error("expected directory to not be empty")
+		}
+	})
+}
+
+// ============================================================================
+// Wiki Tests (wiki.go)
+// ============================================================================
+
+func TestNewWikiValidation(t *testing.T) {
+	tmpDir, err := os.MkdirTemp(tempDir, "test-wiki-validation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create valid wiki structure
+	validSource := filepath.Join(tmpDir, "source")
+	validContent := filepath.Join(validSource, "content")
+	validDest := filepath.Join(tmpDir, "dest")
+	os.MkdirAll(validContent, 0755)
+	os.MkdirAll(validDest, 0755)
+
+	t.Run("valid wiki", func(t *testing.T) {
+		wiki, err := NewWiki(validSource, validDest)
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		if wiki == nil {
+			t.Error("expected wiki to be non-nil")
+		}
+	})
+
+	t.Run("same source and dest", func(t *testing.T) {
+		_, err := NewWiki(validSource, validSource)
+		if err == nil {
+			t.Error("expected error for same source and dest")
+		}
+	})
+
+	t.Run("dest under source", func(t *testing.T) {
+		nestedDest := filepath.Join(validSource, "output")
+		os.MkdirAll(nestedDest, 0755)
+		_, err := NewWiki(validSource, nestedDest)
+		if err == nil {
+			t.Error("expected error for dest under source")
+		}
+	})
+
+	t.Run("source under dest", func(t *testing.T) {
+		nestedSource := filepath.Join(validDest, "source")
+		nestedContent := filepath.Join(nestedSource, "content")
+		os.MkdirAll(nestedContent, 0755)
+		_, err := NewWiki(nestedSource, validDest)
+		if err == nil {
+			t.Error("expected error for source under dest")
+		}
+	})
+
+	t.Run("missing source dir", func(t *testing.T) {
+		_, err := NewWiki(filepath.Join(tmpDir, "nonexistent"), validDest)
+		if err == nil {
+			t.Error("expected error for missing source")
+		}
+	})
+
+	t.Run("missing content dir", func(t *testing.T) {
+		noContentSource := filepath.Join(tmpDir, "no-content")
+		os.MkdirAll(noContentSource, 0755)
+		_, err := NewWiki(noContentSource, validDest)
+		if err == nil {
+			t.Error("expected error for missing content dir")
+		}
+	})
+}
+
+// ============================================================================
+// Watcher Tests (watcher.go)
+// ============================================================================
+
+func TestFilesSnapshotsAreEqual(t *testing.T) {
+	snapshot1 := []fileSnapshot{
+		{name: "file1.md", timestamp: 1000, isDir: false},
+		{name: "dir1", timestamp: 2000, isDir: true},
+	}
+
+	snapshot2 := []fileSnapshot{
+		{name: "file1.md", timestamp: 1000, isDir: false},
+		{name: "dir1", timestamp: 2000, isDir: true},
+	}
+
+	snapshot3 := []fileSnapshot{
+		{name: "file1.md", timestamp: 1001, isDir: false}, // different timestamp
+		{name: "dir1", timestamp: 2000, isDir: true},
+	}
+
+	snapshot4 := []fileSnapshot{
+		{name: "file1.md", timestamp: 1000, isDir: false},
+	}
+
+	t.Run("equal snapshots", func(t *testing.T) {
+		if !filesSnapshotsAreEqual(snapshot1, snapshot2) {
+			t.Error("expected snapshots to be equal")
+		}
+	})
+
+	t.Run("different timestamps", func(t *testing.T) {
+		if filesSnapshotsAreEqual(snapshot1, snapshot3) {
+			t.Error("expected snapshots to be different")
+		}
+	})
+
+	t.Run("different lengths", func(t *testing.T) {
+		if filesSnapshotsAreEqual(snapshot1, snapshot4) {
+			t.Error("expected snapshots to be different")
+		}
+	})
+
+	t.Run("nil snapshot", func(t *testing.T) {
+		if filesSnapshotsAreEqual(nil, snapshot1) {
+			t.Error("expected nil comparison to return false")
+		}
+	})
+
+	t.Run("both nil", func(t *testing.T) {
+		if filesSnapshotsAreEqual(nil, nil) {
+			t.Error("expected nil-nil comparison to return false")
+		}
+	})
+}
+
+func TestTakeFilesSnapshot(t *testing.T) {
+	tmpDir, err := os.MkdirTemp(tempDir, "snapshot-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create test structure
+	subdir := filepath.Join(tmpDir, "subdir")
+	os.MkdirAll(subdir, 0755)
+	os.WriteFile(filepath.Join(tmpDir, "file1.txt"), []byte("content"), 0644)
+	os.WriteFile(filepath.Join(subdir, "file2.txt"), []byte("content"), 0644)
+
+	snapshot, err := takeFilesSnapshot(context.Background(), tmpDir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(snapshot) < 3 { // tmpDir + subdir + at least 1 file
+		t.Errorf("expected at least 3 entries in snapshot, got %d", len(snapshot))
+	}
+
+	// Verify snapshot contains expected paths
+	foundFile1 := false
+	foundSubdir := false
+	for _, s := range snapshot {
+		if s.name == filepath.Join(tmpDir, "file1.txt") {
+			foundFile1 = true
+			if s.isDir {
+				t.Error("file1.txt should not be marked as directory")
+			}
+		}
+		if s.name == subdir {
+			foundSubdir = true
+			if !s.isDir {
+				t.Error("subdir should be marked as directory")
+			}
+		}
+	}
+
+	if !foundFile1 {
+		t.Error("snapshot should contain file1.txt")
+	}
+	if !foundSubdir {
+		t.Error("snapshot should contain subdir")
+	}
+}
+
+// ============================================================================
+// Integration Tests
+// ============================================================================
+
+func TestWikiWithSubstitutionStrings(t *testing.T) {
+	tmpDir, err := os.MkdirTemp(tempDir, "test-substitutions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create source structure
+	sourceDir := filepath.Join(tmpDir, "source")
+	contentDir := filepath.Join(sourceDir, "content")
+	destDir := filepath.Join(tmpDir, "dest")
+	os.MkdirAll(contentDir, 0755)
+	os.MkdirAll(destDir, 0755)
+
+	// Create substitution strings file
+	subsPath := filepath.Join(sourceDir, "substitution-strings.csv")
+	os.WriteFile(subsPath, []byte("SITE,example.com\nYEAR,2024"), 0644)
+
+	// Create markdown with placeholders (including an undefined one)
+	mdPath := filepath.Join(contentDir, "test.md")
+	mdContent := "# Welcome to {{SITE}}\nCopyright {{YEAR}}\nUnknown: {{MISSING}}"
+	os.WriteFile(mdPath, []byte(mdContent), 0644)
+
+	// Generate wiki
+	wiki, err := NewWiki(sourceDir, destDir)
+	if err != nil {
+		t.Fatalf("failed to create wiki: %v", err)
+	}
+
+	if err := wiki.Generate(context.Background(), true, false, false, "test"); err != nil {
+		t.Fatalf("failed to generate wiki: %v", err)
+	}
+
+	// Check output
+	htmlPath := filepath.Join(destDir, "test.html")
+	content, err := os.ReadFile(htmlPath)
+	if err != nil {
+		t.Fatalf("failed to read output: %v", err)
+	}
+
+	contentStr := string(content)
+
+	// Verify substitutions were applied
+	if !strings.Contains(contentStr, "example.com") {
+		t.Error("SITE substitution not applied")
+	}
+	if !strings.Contains(contentStr, "2024") {
+		t.Error("YEAR substitution not applied")
+	}
+
+	// Verify undefined placeholder remains unchanged
+	if !strings.Contains(contentStr, "{{MISSING}}") {
+		t.Error("undefined placeholder should remain unchanged")
+	}
+
+	// Verify defined placeholders don't remain
+	if strings.Contains(contentStr, "{{SITE}}") {
+		t.Error("{{SITE}} placeholder should have been replaced")
+	}
+	if strings.Contains(contentStr, "{{YEAR}}") {
+		t.Error("{{YEAR}} placeholder should have been replaced")
+	}
 }

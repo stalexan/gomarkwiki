@@ -21,12 +21,15 @@ func isReadableFile(info fs.FileInfo, path string) bool {
 		return false
 	}
 
-	// Is the file regular?
+	// Is the file regular or a symlink?
+	// Note: filepath.Walk uses os.Lstat internally, so symlinks will have os.ModeSymlink set.
 	mode := info.Mode()
-	if !mode.IsRegular() && (mode&os.ModeSymlink == 0) {
+	isSymlink := mode&os.ModeSymlink != 0
+	if !mode.IsRegular() && !isSymlink {
 		util.PrintWarning("Skipping not regular file '%s'", path)
 		return false
 	}
+	// Symlinks are allowed and will be validated by os.Open below (which will fail for dead symlinks).
 
 	// Check readability by attempting to open the file.
 	file, err := os.Open(path)

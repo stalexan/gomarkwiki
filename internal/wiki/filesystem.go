@@ -317,7 +317,9 @@ func (wiki Wiki) cleanDestDir(ctx context.Context, relDestPaths map[string]bool)
 	}
 
 	// Delete empty directories.
-	deleteEmptyDirectories(wiki.DestDir)
+	if err := deleteEmptyDirectories(wiki.DestDir); err != nil {
+		return fmt.Errorf("failed to delete empty directories in '%s': %v", wiki.DestDir, err)
+	}
 
 	return nil
 }

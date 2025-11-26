@@ -143,9 +143,10 @@ func (wiki *Wiki) generate(ctx context.Context, regen, clean bool, version strin
 
 	// Generate the part of the wiki that comes from content found in the source dir.
 	var relDestPaths map[string]bool
-	var err error
-	if relDestPaths, err = wiki.generateFromContent(ctx, regen, version); err != nil {
-		return err
+	var processingErr error // Store error but don't return immediately
+	if relDestPaths, processingErr = wiki.generateFromContent(ctx, regen, version); processingErr != nil {
+		// Log but continue - we still want CSS and cleanup for successfully processed files
+		util.PrintError(processingErr, "some files failed to process")
 	}
 
 	// Check for cancellation before copying CSS files
@@ -153,8 +154,8 @@ func (wiki *Wiki) generate(ctx context.Context, regen, clean bool, version strin
 		return ctx.Err()
 	}
 
-	// Copy css files to destDir.
-	if err = wiki.copyCssFiles(ctx, relDestPaths); err != nil {
+	// Copy css files to destDir (even with partial results).
+	if err := wiki.copyCssFiles(ctx, relDestPaths); err != nil {
 		return err
 	}
 
@@ -165,10 +166,11 @@ func (wiki *Wiki) generate(ctx context.Context, regen, clean bool, version strin
 
 	// Clean dest dir.
 	if clean {
-		if err = wiki.cleanDestDir(ctx, relDestPaths); err != nil {
+		if err := wiki.cleanDestDir(ctx, relDestPaths); err != nil {
 			return fmt.Errorf("failed to clean dest dir '%s': %v", wiki.DestDir, err)
 		}
 	}
 
-	return nil
+	// Return the processing error at the end (if any)
+	return processingErr
 }

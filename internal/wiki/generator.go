@@ -273,7 +273,7 @@ func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version st
 		for i, e := range processingErrors {
 			errMsg += fmt.Sprintf("\n  %d. %v", i+1, e)
 		}
-		return relDestPaths, fmt.Errorf(errMsg)
+		return relDestPaths, fmt.Errorf("%s", errMsg)
 	}
 
 	return relDestPaths, nil

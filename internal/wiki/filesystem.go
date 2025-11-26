@@ -167,8 +167,10 @@ func (wiki *Wiki) copyCssFiles(ctx context.Context, relDestPaths map[string]bool
 	// Don't delete css files even though they don't have a corresponding
 	// file in the source dir.
 	cssFiles := []string{"style.css", "github-style.css"}
-	for _, cssFile := range cssFiles {
-		relDestPaths[cssFile] = true
+	if relDestPaths != nil {
+		for _, cssFile := range cssFiles {
+			relDestPaths[cssFile] = true
+		}
 	}
 
 	// Check if CSS files need to be copied (if they don't exist in dest).

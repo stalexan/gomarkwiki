@@ -165,7 +165,9 @@ func (wiki *Wiki) generate(ctx context.Context, regen, clean bool, version strin
 	}
 
 	// Clean dest dir.
-	if clean {
+	// Only clean if we have a valid list of generated files.
+	// If relDestPaths is nil (critical failure), skipping clean prevents wiping the directory.
+	if clean && relDestPaths != nil {
 		if err := wiki.cleanDestDir(ctx, relDestPaths); err != nil {
 			return fmt.Errorf("failed to clean dest dir '%s': %v", wiki.DestDir, err)
 		}

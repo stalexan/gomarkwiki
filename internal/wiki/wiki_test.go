@@ -309,6 +309,127 @@ func TestIgnoreFileSkipsBlankAndCommentLines(t *testing.T) {
 	}
 }
 
+// TestConfigPathsSetWhenFilesMissing ensures Wiki records config file paths even when files are absent.
+func TestConfigPathsSetWhenFilesMissing(t *testing.T) {
+	var err error
+
+	testCaseTempDir, err := os.MkdirTemp(tempDir, "config-paths")
+	if err != nil {
+		t.Fatalf("Error creating test case temp directory: %v", err)
+	}
+	defer func() {
+		t.Logf("Removing test case temp directory %s", testCaseTempDir)
+		if err := os.RemoveAll(testCaseTempDir); err != nil {
+			t.Fatalf("Error removing test case temp directory: %v", err)
+		}
+	}()
+
+	sourceDir := filepath.Join(testCaseTempDir, "source")
+	contentDir := filepath.Join(sourceDir, "content")
+	staticDir := filepath.Join(sourceDir, "static")
+	outputDir := filepath.Join(testCaseTempDir, "output")
+
+	for _, dir := range []string{contentDir, staticDir, outputDir} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatalf("Failed to create directory %s: %v", dir, err)
+		}
+	}
+
+	// Required static files for generation
+	if err := copyFile(stylePath, staticDir); err != nil {
+		t.Fatalf("Failed to copy style.css: %v", err)
+	}
+	if err := copyFile(githubStylePath, staticDir); err != nil {
+		t.Fatalf("Failed to copy github-style.css: %v", err)
+	}
+
+	theWiki, err := NewWiki(sourceDir, outputDir)
+	if err != nil {
+		t.Fatalf("Error creating Wiki instance: %v", err)
+	}
+
+	expectedSubs := filepath.Join(sourceDir, "substitution-strings.csv")
+	expectedIgnore := filepath.Join(sourceDir, "ignore.txt")
+
+	if theWiki.subsPath != expectedSubs {
+		t.Fatalf("Expected subsPath to be %s, got %s", expectedSubs, theWiki.subsPath)
+	}
+
+	if theWiki.ignorePath != expectedIgnore {
+		t.Fatalf("Expected ignorePath to be %s, got %s", expectedIgnore, theWiki.ignorePath)
+	}
+}
+
+// TestCheckSubsFileChangedDetectsCreateDelete verifies creation and deletion are detected.
+func TestCheckSubsFileChangedDetectsCreateDelete(t *testing.T) {
+	tempDir := t.TempDir()
+	subsPath := filepath.Join(tempDir, "substitution-strings.csv")
+
+	w := &Watcher{
+		subsPath: subsPath,
+	}
+
+	// Create file
+	if err := os.WriteFile(subsPath, []byte("A,B"), 0644); err != nil {
+		t.Fatalf("Failed to write substitution file: %v", err)
+	}
+	if changed := w.checkSubsFileChanged(); !changed {
+		t.Fatalf("Expected creation to be detected as change")
+	}
+
+	// No change
+	if changed := w.checkSubsFileChanged(); changed {
+		t.Fatalf("Expected no change when file unchanged")
+	}
+
+	// Delete file
+	if err := os.Remove(subsPath); err != nil {
+		t.Fatalf("Failed to remove substitution file: %v", err)
+	}
+	if changed := w.checkSubsFileChanged(); !changed {
+		t.Fatalf("Expected deletion to be detected as change")
+	}
+
+	if w.subsFileExists {
+		t.Fatalf("Expected subsFileExists to be false after deletion")
+	}
+}
+
+// TestCheckIgnoreFileChangedDetectsCreateDelete verifies creation and deletion for ignore.txt.
+func TestCheckIgnoreFileChangedDetectsCreateDelete(t *testing.T) {
+	tempDir := t.TempDir()
+	ignorePath := filepath.Join(tempDir, "ignore.txt")
+
+	w := &Watcher{
+		ignorePath: ignorePath,
+	}
+
+	// Create file
+	if err := os.WriteFile(ignorePath, []byte("\\.tmp$"), 0644); err != nil {
+		t.Fatalf("Failed to write ignore file: %v", err)
+	}
+	if changed := w.checkIgnoreFileChanged(); !changed {
+		t.Fatalf("Expected creation to be detected as change")
+	}
+
+	// No change
+	if changed := w.checkIgnoreFileChanged(); changed {
+		t.Fatalf("Expected no change when file unchanged")
+	}
+
+	// Delete file
+	if err := os.Remove(ignorePath); err != nil {
+		t.Fatalf("Failed to remove ignore file: %v", err)
+	}
+	if changed := w.checkIgnoreFileChanged(); !changed {
+		t.Fatalf("Expected deletion to be detected as change")
+	}
+
+	if w.ignoreFileExists {
+		t.Fatalf("Expected ignoreFileExists to be false after deletion")
+	}
+}
+
 func copyDir(dir1, dir2 string) error {
 	// Make sure dir2 doesn't exit.
 	_, err := os.Stat(dir2)

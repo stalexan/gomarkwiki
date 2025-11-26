@@ -68,9 +68,11 @@ type Watcher struct {
 	mu        sync.Mutex // Protects fsWatcher, snapshot, subsModTime, and ignoreModTime
 
 	// Current state
-	snapshot      []fileSnapshot
-	subsModTime   int64 // Last known modification time of substitution strings file
-	ignoreModTime int64 // Last known modification time of ignore.txt file
+	snapshot         []fileSnapshot
+	subsModTime      int64 // Last known modification time of substitution strings file
+	ignoreModTime    int64 // Last known modification time of ignore.txt file
+	subsFileExists   bool
+	ignoreFileExists bool
 
 	// Context management
 	ctx    context.Context
@@ -112,29 +114,43 @@ func NewWatcher(parentCtx context.Context, contentDir, subsPath, ignorePath, sou
 		return nil, fmt.Errorf("failed to initialize watcher for %s: %v", contentDir, err)
 	}
 
+	// Watch source directory to monitor config file creation/deletion
+	if err := fsWatcher.Add(sourceDir); err != nil {
+		fsWatcher.Close()
+		return nil, fmt.Errorf("failed to watch source directory '%s': %v", sourceDir, err)
+	}
+
 	// Watch substitution strings file if provided
 	var subsModTime int64
+	var subsExists bool
 	if subsPath != "" {
-		if err := fsWatcher.Add(subsPath); err != nil {
-			fsWatcher.Close()
-			return nil, fmt.Errorf("failed to watch '%s': %v", subsPath, err)
-		}
-		// Record initial modification time of substitution strings file
 		if info, err := os.Stat(subsPath); err == nil {
 			subsModTime = info.ModTime().Unix()
+			subsExists = true
+			if err := fsWatcher.Add(subsPath); err != nil {
+				fsWatcher.Close()
+				return nil, fmt.Errorf("failed to watch '%s': %v", subsPath, err)
+			}
+		} else if !os.IsNotExist(err) {
+			fsWatcher.Close()
+			return nil, fmt.Errorf("failed to stat '%s': %v", subsPath, err)
 		}
 	}
 
 	// Watch ignore.txt file if provided
 	var ignoreModTime int64
+	var ignoreExists bool
 	if ignorePath != "" {
-		if err := fsWatcher.Add(ignorePath); err != nil {
-			fsWatcher.Close()
-			return nil, fmt.Errorf("failed to watch '%s': %v", ignorePath, err)
-		}
-		// Record initial modification time of ignore.txt file
 		if info, err := os.Stat(ignorePath); err == nil {
 			ignoreModTime = info.ModTime().Unix()
+			ignoreExists = true
+			if err := fsWatcher.Add(ignorePath); err != nil {
+				fsWatcher.Close()
+				return nil, fmt.Errorf("failed to watch '%s': %v", ignorePath, err)
+			}
+		} else if !os.IsNotExist(err) {
+			fsWatcher.Close()
+			return nil, fmt.Errorf("failed to stat '%s': %v", ignorePath, err)
 		}
 	}
 
@@ -142,15 +158,17 @@ func NewWatcher(parentCtx context.Context, contentDir, subsPath, ignorePath, sou
 	ctx, cancel := context.WithCancel(parentCtx)
 
 	return &Watcher{
-		contentDir:    contentDir,
-		subsPath:      subsPath,
-		ignorePath:    ignorePath,
-		sourceDir:     sourceDir,
-		fsWatcher:     fsWatcher,
-		subsModTime:   subsModTime,
-		ignoreModTime: ignoreModTime,
-		ctx:           ctx,
-		cancel:        cancel,
+		contentDir:       contentDir,
+		subsPath:         subsPath,
+		ignorePath:       ignorePath,
+		sourceDir:        sourceDir,
+		fsWatcher:        fsWatcher,
+		subsModTime:      subsModTime,
+		ignoreModTime:    ignoreModTime,
+		subsFileExists:   subsExists,
+		ignoreFileExists: ignoreExists,
+		ctx:              ctx,
+		cancel:           cancel,
 	}, nil
 }
 
@@ -329,16 +347,12 @@ func (w *Watcher) waitForEvent(ctx context.Context) (bool, bool, error) {
 		}
 
 		// Check if substitution strings file or ignore.txt changed
-		subsChanged := w.subsPath != "" &&
-			(event.Has(fsnotify.Write) || event.Has(fsnotify.Rename)) &&
-			filepath.Clean(event.Name) == w.subsPath
+		subsChanged := eventMatchesConfigFile(event, w.subsPath)
 		if subsChanged {
 			util.PrintVerbose("Substitution strings file '%s' write seen", w.subsPath)
 		}
 
-		ignoreChanged := w.ignorePath != "" &&
-			(event.Has(fsnotify.Write) || event.Has(fsnotify.Rename)) &&
-			filepath.Clean(event.Name) == w.ignorePath
+		ignoreChanged := eventMatchesConfigFile(event, w.ignorePath)
 		if ignoreChanged {
 			util.PrintVerbose("Ignore expressions file '%s' write seen", w.ignorePath)
 		}
@@ -354,6 +368,22 @@ func (w *Watcher) waitForEvent(ctx context.Context) (bool, bool, error) {
 	case <-ctx.Done():
 		return false, false, nil // Timeout, caller will handle
 	}
+}
+
+func eventMatchesConfigFile(event fsnotify.Event, path string) bool {
+	if path == "" {
+		return false
+	}
+
+	if filepath.Clean(event.Name) != path {
+		return false
+	}
+
+	return event.Has(fsnotify.Create) ||
+		event.Has(fsnotify.Write) ||
+		event.Has(fsnotify.Remove) ||
+		event.Has(fsnotify.Rename) ||
+		event.Has(fsnotify.Chmod)
 }
 
 // waitForStability waits for file changes to stabilize by comparing snapshots.
@@ -487,20 +517,25 @@ func (w *Watcher) checkSubsFileChanged() bool {
 
 	info, err := os.Stat(w.subsPath)
 	if err != nil {
-		// File might have been deleted or is inaccessible
-		// Don't update mod time, but don't trigger regen either
+		if os.IsNotExist(err) {
+			w.mu.Lock()
+			changed := w.subsFileExists
+			w.subsFileExists = false
+			w.subsModTime = 0
+			w.mu.Unlock()
+			return changed
+		}
+		util.PrintWarning("Failed to stat substitution strings file '%s': %v", w.subsPath, err)
 		return false
 	}
 
 	currentModTime := info.ModTime().Unix()
 	w.mu.Lock()
-	defer w.mu.Unlock()
-	if currentModTime != w.subsModTime {
-		w.subsModTime = currentModTime
-		return true
-	}
-
-	return false
+	changed := !w.subsFileExists || currentModTime != w.subsModTime
+	w.subsFileExists = true
+	w.subsModTime = currentModTime
+	w.mu.Unlock()
+	return changed
 }
 
 // checkIgnoreFileChanged checks if the ignore.txt file has been modified
@@ -513,20 +548,25 @@ func (w *Watcher) checkIgnoreFileChanged() bool {
 
 	info, err := os.Stat(w.ignorePath)
 	if err != nil {
-		// File might have been deleted or is inaccessible
-		// Don't update mod time, but don't trigger regen either
+		if os.IsNotExist(err) {
+			w.mu.Lock()
+			changed := w.ignoreFileExists
+			w.ignoreFileExists = false
+			w.ignoreModTime = 0
+			w.mu.Unlock()
+			return changed
+		}
+		util.PrintWarning("Failed to stat ignore expressions file '%s': %v", w.ignorePath, err)
 		return false
 	}
 
 	currentModTime := info.ModTime().Unix()
 	w.mu.Lock()
-	defer w.mu.Unlock()
-	if currentModTime != w.ignoreModTime {
-		w.ignoreModTime = currentModTime
-		return true
-	}
-
-	return false
+	changed := !w.ignoreFileExists || currentModTime != w.ignoreModTime
+	w.ignoreFileExists = true
+	w.ignoreModTime = currentModTime
+	w.mu.Unlock()
+	return changed
 }
 
 // UpdateSnapshot updates the internal snapshot state.

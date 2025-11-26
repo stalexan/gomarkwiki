@@ -66,19 +66,16 @@ func validatePlaceholder(placeholder string) error {
 func (wiki *Wiki) loadSubstitutionStrings() error {
 	// Start with no substitution strings.
 	wiki.subStrings = nil
-	wiki.subsPath = ""
 
 	// Is there a substitution strings file?
 	const subsFileName = "substitution-strings.csv"
 	candidateSubsPath := filepath.Join(wiki.SourceDir, subsFileName)
+	wiki.subsPath = filepath.Clean(candidateSubsPath)
+
 	var pairs [][2]string
 	var err error
 	if pairs, err = util.LoadStringPairs(candidateSubsPath); err != nil {
 		return fmt.Errorf("failed to load substitution strings from '%s': %v", candidateSubsPath, err)
-	}
-	if pairs != nil {
-		// There's a substitution strings file. Remember its path.
-		wiki.subsPath = filepath.Clean(candidateSubsPath)
 	}
 	if len(pairs) == 0 {
 		// There's either no substitution strings file or the file is empty.
@@ -121,11 +118,11 @@ func (wiki Wiki) makeSubstitutions(data []byte) []byte {
 func (wiki *Wiki) loadIgnoreExpressions() error {
 	// Start with no ignore expressions.
 	wiki.ignore = nil
-	wiki.ignorePath = ""
 
 	// Open ingore file, if there is one.
 	const ignoreFileName = "ignore.txt"
 	ignorePath := filepath.Join(wiki.SourceDir, ignoreFileName)
+	wiki.ignorePath = filepath.Clean(ignorePath)
 	var file *os.File
 	var err error
 	if file, err = os.Open(ignorePath); err != nil {
@@ -137,9 +134,6 @@ func (wiki *Wiki) loadIgnoreExpressions() error {
 		}
 	}
 	defer file.Close()
-
-	// There's an ignore file. Remember its path.
-	wiki.ignorePath = filepath.Clean(ignorePath)
 
 	// Read expressions.
 	scanner := bufio.NewScanner(file)

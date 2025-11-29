@@ -260,14 +260,12 @@ func deleteEmptyDirectoriesWithDepth(path string, depth int) error {
 				return err
 			}
 
-			if isEmpty {
-				// Delete the empty directory.
-				util.PrintVerbose("Deleting empty directory '%s'", entryPath)
-				err := os.Remove(entryPath)
-				if err != nil {
-					return err
-				}
-			}
+		if isEmpty {
+			// Delete the empty directory.
+			// Ignore any error - if removal fails (e.g., due to TOCTOU race), it's harmless.
+			util.PrintVerbose("Deleting empty directory '%s'", entryPath)
+			os.Remove(entryPath)
+		}
 		}
 	}
 

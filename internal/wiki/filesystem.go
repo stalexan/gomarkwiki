@@ -197,22 +197,7 @@ func (wiki *Wiki) copyCssFiles(ctx context.Context, relDestPaths map[string]bool
 		}
 	}
 
-	// Check if CSS files need to be copied (if they don't exist in dest).
-	needsCopy := false
-	for _, cssFile := range cssFiles {
-		destPath := filepath.Join(wiki.DestDir, cssFile)
-		if _, err := os.Stat(destPath); os.IsNotExist(err) {
-			needsCopy = true
-			break
-		}
-	}
-
-	// Skip copying if all CSS files already exist.
-	if !needsCopy {
-		return nil
-	}
-
-	// Copy CSS files.
+	// Always copy CSS files to ensure users get the latest styles after upgrades.
 	for _, cssFile := range cssFiles {
 		// Check for cancellation before each file
 		select {

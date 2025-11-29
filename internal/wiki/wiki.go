@@ -166,13 +166,15 @@ func (wiki *Wiki) generate(ctx context.Context, regen, clean bool, version strin
 	}
 
 	// Clean dest dir.
-	// Only clean if we have a valid list of generated files.
-	// If relDestPaths is nil (critical failure), skipping clean prevents wiping the directory.
-	if clean && relDestPaths != nil {
+	// Only clean if generation was fully successful (no processing errors).
+	// If there were any errors (including MaxFilesProcessed limit), relDestPaths may be incomplete,
+	// and cleaning would incorrectly delete files that failed to process due to transient errors.
+	if clean && relDestPaths != nil && processingErr == nil {
 		if err := wiki.cleanDestDir(ctx, relDestPaths); err != nil {
-			cleanErr := fmt.Errorf("failed to clean dest dir '%s': %v", wiki.DestDir, err)
-			return errors.Join(processingErr, cleanErr)
+			return fmt.Errorf("failed to clean dest dir '%s': %v", wiki.DestDir, err)
 		}
+	} else if clean && processingErr != nil {
+		util.PrintWarning("Skipping clean due to processing errors - would risk deleting valid files")
 	}
 
 	// Return the processing error at the end (if any)

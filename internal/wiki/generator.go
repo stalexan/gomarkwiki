@@ -241,6 +241,11 @@ func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version st
 			if err != nil {
 				util.PrintError(err, "failed to generate HTML for '%s'", contentPath)
 				processingErrors = append(processingErrors, fmt.Errorf("failed to generate HTML for '%s': %w", contentPath, err))
+				// Still record the destination path to prevent deletion of existing output file.
+				// This is critical when using -clean flag to avoid deleting valid HTML on transient errors.
+				if relDestPath != "" {
+					relDestPaths[relDestPath] = true
+				}
 				return nil
 			}
 
@@ -250,12 +255,17 @@ func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version st
 			}
 		} else {
 			// This is not a markdown file. Just copy it.
+			relDestPath = relContentPath
 			if err := wiki.copyFileToDest(ctx, info, contentPath, relContentPath, regen); err != nil {
 				util.PrintError(err, "failed to copy '%s' to dest", contentPath)
 				processingErrors = append(processingErrors, fmt.Errorf("failed to copy '%s': %w", contentPath, err))
+				// Still record the destination path to prevent deletion of existing output file.
+				// This is critical when using -clean flag to avoid deleting valid files on transient errors.
+				if relDestPath != "" {
+					relDestPaths[relDestPath] = true
+				}
 				return nil
 			}
-			relDestPath = relContentPath
 		}
 
 		// Record that this file corresponds to a file from the source dir.

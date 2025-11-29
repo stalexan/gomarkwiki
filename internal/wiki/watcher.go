@@ -36,10 +36,11 @@ const (
 	MAX_REGEN_INTERVAL = 10 * time.Minute
 )
 
-// fileSnapshot records the name and modification time for a given file or directory.
+// fileSnapshot records the name, modification time, and size for a given file or directory.
 type fileSnapshot struct {
 	name      string
-	timestamp int64
+	timestamp int64 // nanoseconds since Unix epoch
+	size      int64 // file size in bytes (0 for directories)
 	isDir     bool
 }
 
@@ -738,7 +739,8 @@ func takeFilesSnapshot(ctx context.Context, dir string) ([]fileSnapshot, error) 
 
 		snapshot := fileSnapshot{
 			name:      path,
-			timestamp: info.ModTime().Unix(),
+			timestamp: info.ModTime().UnixNano(),
+			size:      info.Size(),
 			isDir:     info.IsDir(),
 		}
 		snapshots = append(snapshots, snapshot)

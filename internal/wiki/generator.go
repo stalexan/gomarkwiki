@@ -140,7 +140,7 @@ func (wiki Wiki) generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath,
 
 	// Generate end of HTML file.
 	if useGitHubStyle {
-		html.WriteString("</article>")
+		html.WriteString("</article>\n</body>\n</html>")
 	} else {
 		html.WriteString("</body>\n</html>")
 	}

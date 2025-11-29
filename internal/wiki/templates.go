@@ -36,9 +36,12 @@ const defaultHtmlHeaderTemplateText = `<!doctype html>
 
 // githubHtmlHeaderTemplateText is the text used to create the HTML template that
 // generates the start of each HTML file that uses GitHub styles.
-const githubHtmlHeaderTemplateText = `<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name=generator content="gomarkwiki {{.Version}}">
+const githubHtmlHeaderTemplateText = `<!doctype html>
+<html lang="en">
+<head>
 <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name=generator content="gomarkwiki {{.Version}}">
 <title>{{.Title}}</title>
 <link rel="icon" href="{{.RootRelPath}}favicon.ico" type="image/x-icon" />
 <link href="{{.RootRelPath}}github-style.css" rel="stylesheet" />
@@ -58,6 +61,8 @@ const githubHtmlHeaderTemplateText = `<meta name="viewport" content="width=devic
 		}
 	}
 </style>
+</head>
+<body>
 <article class="markdown-body">
 `
 

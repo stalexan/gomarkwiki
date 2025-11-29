@@ -3,6 +3,7 @@ package wiki
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -156,7 +157,7 @@ func (wiki *Wiki) generate(ctx context.Context, regen, clean bool, version strin
 
 	// Copy css files to destDir (even with partial results).
 	if err := wiki.copyCssFiles(ctx, relDestPaths); err != nil {
-		return err
+		return errors.Join(processingErr, err)
 	}
 
 	// Check for cancellation before cleaning
@@ -169,7 +170,8 @@ func (wiki *Wiki) generate(ctx context.Context, regen, clean bool, version strin
 	// If relDestPaths is nil (critical failure), skipping clean prevents wiping the directory.
 	if clean && relDestPaths != nil {
 		if err := wiki.cleanDestDir(ctx, relDestPaths); err != nil {
-			return fmt.Errorf("failed to clean dest dir '%s': %v", wiki.DestDir, err)
+			cleanErr := fmt.Errorf("failed to clean dest dir '%s': %v", wiki.DestDir, err)
+			return errors.Join(processingErr, cleanErr)
 		}
 	}
 

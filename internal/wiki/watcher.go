@@ -269,11 +269,26 @@ func (w *Watcher) WaitForChange() (*WatchResult, error) {
 	// Check if context expired (timeout for periodic regeneration)
 	if ctx.Err() == context.DeadlineExceeded {
 		util.PrintDebug("Regen timer expired for %s", w.sourceDir)
-		w.mu.Lock()
-		snapshot := w.snapshot
-		w.mu.Unlock()
+
+		// Take fresh snapshot so next cycle has up-to-date state.
+		// Use parent context (w.ctx) since the timeout context already expired.
+		freshSnapshot, err := takeFilesSnapshot(w.ctx, w.contentDir)
+		if err != nil {
+			// Fall back to old snapshot if we can't take a fresh one
+			util.PrintDebug("Failed to take fresh snapshot on timeout, using old snapshot: %v", err)
+			w.mu.Lock()
+			snapshot := w.snapshot
+			w.mu.Unlock()
+			return &WatchResult{
+				Snapshot:      snapshot,
+				Regen:         false,
+				IgnoreChanged: false,
+				Timeout:       true,
+			}, nil
+		}
+
 		return &WatchResult{
-			Snapshot:      snapshot,
+			Snapshot:      freshSnapshot,
 			Regen:         false,
 			IgnoreChanged: false,
 			Timeout:       true,

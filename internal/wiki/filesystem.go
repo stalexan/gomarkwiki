@@ -134,22 +134,10 @@ func (wiki Wiki) copyFileToDest(ctx context.Context, sourceInfo fs.FileInfo, sou
 		return fmt.Errorf("failed to create dest dir '%s': %v", destDirPath, err)
 	}
 
-	// Re-stat the source file right before opening to prevent TOCTOU issues.
-	_, err := os.Stat(sourcePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			util.PrintVerbose("'%s' was not copied to dest because it no longer exists", sourcePath)
-			return nil
-		} else {
-			util.PrintError(err, "could not stat '%s' for copy to dest", sourcePath)
-			return nil
-		}
-	}
-
 	// Copy file.
 	util.PrintVerbose("Copying '%s'", sourceRelPath)
-	var source *os.File
-	if source, err = os.Open(sourcePath); err != nil {
+	source, err := os.Open(sourcePath)
+	if err != nil {
 		if os.IsNotExist(err) {
 			util.PrintVerbose("'%s' was not copied to dest because it no longer exists", sourcePath)
 			return nil

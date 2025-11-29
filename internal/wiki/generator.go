@@ -16,9 +16,9 @@ import (
 // markdownExts specifies markdown file extensions.
 var markdownExts = [...]string{".md", ".mdwn", ".markdown"}
 
-// isPathMarkdown returns true if path has a markdown extension.
+// isPathMarkdown returns true if path has a markdown extension (case-insensitive).
 func isPathMarkdown(path string) bool {
-	ext := filepath.Ext(path)
+	ext := strings.ToLower(filepath.Ext(path))
 	for _, markdownExt := range markdownExts {
 		if ext == markdownExt {
 			return true

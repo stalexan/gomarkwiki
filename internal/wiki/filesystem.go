@@ -14,6 +14,30 @@ import (
 	"github.com/stalexan/gomarkwiki/internal/util"
 )
 
+// warnIfSymlinkToDir checks if path is a symlink to a directory and prints a warning if so.
+// Returns true if it is a symlink to a directory, false otherwise.
+func warnIfSymlinkToDir(info fs.FileInfo, path string) bool {
+	// Check if this is a symlink
+	// Note: filepath.Walk uses os.Lstat internally, so symlinks will have os.ModeSymlink set.
+	if info.Mode()&os.ModeSymlink == 0 {
+		return false
+	}
+
+	// Check if the symlink target is a directory
+	targetInfo, err := os.Stat(path)
+	if err != nil {
+		// Can't determine target, not a symlink to a directory
+		return false
+	}
+
+	if targetInfo.IsDir() {
+		util.PrintWarning("Skipping symlink to directory '%s' (symlinks to directories are not followed)", path)
+		return true
+	}
+
+	return false
+}
+
 // isReadableFile checks to see whether path is a regular file and readable.
 func isReadableFile(info fs.FileInfo, path string) bool {
 	// Is this a dir?
@@ -303,6 +327,8 @@ func (wiki Wiki) cleanDestDir(ctx context.Context, relDestPaths map[string]bool)
 
 		// Is this file regular and readable?
 		if !isReadableFile(info, destPath) {
+			// Warn if this is a symlink to a directory
+			warnIfSymlinkToDir(info, destPath)
 			return nil
 		}
 

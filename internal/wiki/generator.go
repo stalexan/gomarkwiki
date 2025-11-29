@@ -197,6 +197,8 @@ func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version st
 
 		// Is this file regular and readable?
 		if !isReadableFile(info, contentPath) {
+			// Warn if this is a symlink to a directory
+			warnIfSymlinkToDir(info, contentPath)
 			return nil
 		}
 

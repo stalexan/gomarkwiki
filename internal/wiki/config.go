@@ -148,9 +148,9 @@ func (wiki *Wiki) loadIgnoreExpressions() error {
 			continue
 		}
 
-		expression, err := regexp.Compile(line)
+		expression, err := regexp.Compile(trimmed)
 		if err != nil {
-			return fmt.Errorf("error compiling regular expression '%s' on line %d: %v", line, lineCount, err)
+			return fmt.Errorf("error compiling regular expression '%s' on line %d: %v", trimmed, lineCount, err)
 		}
 		wiki.ignore = append(wiki.ignore, expression)
 	}

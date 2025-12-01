@@ -725,7 +725,12 @@ func watchDirRecursive(ctx context.Context, path string, watcher *fsnotify.Watch
 		}
 
 		if err != nil {
-			return err
+			// If we can't access a path during setup, warn and skip it but continue setup
+			util.PrintWarning("Failed to access '%s' during watch setup: %v", subPath, err)
+			if info != nil && info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 		if info.IsDir() {
 			err = watcher.Add(subPath)
@@ -759,7 +764,11 @@ func takeFilesSnapshot(ctx context.Context, dir string) ([]fileSnapshot, error) 
 		}
 
 		if err != nil {
-			return err
+			util.PrintWarning("Failed to access '%s' during snapshot: %v", path, err)
+			if info != nil && info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 
 		// Look up file size. (Directory size is filesystem-dependent and meaningless for change detection

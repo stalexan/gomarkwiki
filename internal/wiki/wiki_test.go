@@ -513,13 +513,14 @@ func TestConfigPathsNotSetWhenFilesMissing(t *testing.T) {
 	}
 
 	expectedIgnore := filepath.Join(sourceDir, "ignore.txt")
+	expectedSubs := filepath.Join(sourceDir, "substitution-strings.csv")
 
-	// subsPath should be empty when file doesn't exist
-	if theWiki.subsPath != "" {
-		t.Fatalf("Expected subsPath to be empty when file missing, got %s", theWiki.subsPath)
+	// subsPath is set even when file is missing (so watcher can detect creation)
+	if theWiki.subsPath != expectedSubs {
+		t.Fatalf("Expected subsPath to be %s, got %s", expectedSubs, theWiki.subsPath)
 	}
 
-	// ignorePath is still set even when file is missing (different behavior)
+	// ignorePath is set even when file is missing (so watcher can detect creation)
 	if theWiki.ignorePath != expectedIgnore {
 		t.Fatalf("Expected ignorePath to be %s, got %s", expectedIgnore, theWiki.ignorePath)
 	}

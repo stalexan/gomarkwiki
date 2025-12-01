@@ -167,7 +167,7 @@ func copyToFile(ctx context.Context, destPath string, source io.Reader) (err err
 }
 
 // copyFileToDest copies a file from the source dir to the dest dir.
-func (wiki Wiki) copyFileToDest(ctx context.Context, sourceInfo fs.FileInfo, sourcePath, sourceRelPath string, regen bool) error {
+func (wiki Wiki) copyFileToDest(ctx context.Context, sourcePath, sourceRelPath string, regen bool) error {
 	// Check for cancellation before starting
 	select {
 	case <-ctx.Done():

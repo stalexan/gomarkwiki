@@ -79,7 +79,7 @@ func checkForStyleDirective(data []byte) (bool, []byte) {
 // generateHtmlFromMarkdown generates an HTML file from a markdown file.
 // relDestPath is the relative destination path (e.g., "Foo/Bar.html") that was
 // already computed for collision detection in the caller.
-func (wiki Wiki) generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath, relDestPath string, regen bool, version string) (string, error) {
+func (wiki Wiki) generateHtmlFromMarkdown(mdPath, mdRelPath, relDestPath string, regen bool, version string) (string, error) {
 	// Compute the full output path. For example, if relDestPath is Foo/Bar.html
 	// and the destination directory (destDir) is /wiki-html, the output path is /wiki-html/Foo/Bar.html.
 	outPath := filepath.Join(wiki.DestDir, relDestPath)
@@ -286,7 +286,7 @@ func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version st
 			}
 
 			// Generate HTML from markdown.
-			relDestPath, err = wiki.generateHtmlFromMarkdown(info, contentPath, relContentPath, relDestPath, regen, version)
+			relDestPath, err = wiki.generateHtmlFromMarkdown(contentPath, relContentPath, relDestPath, regen, version)
 			if err != nil {
 				util.PrintError(err, "failed to generate HTML for '%s'", contentPath)
 				// Cap error collection to prevent OOM from massive error accumulation
@@ -308,7 +308,7 @@ func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version st
 		} else {
 			// This is not a markdown file. Just copy it.
 			relDestPath = relContentPath
-			if err := wiki.copyFileToDest(ctx, info, contentPath, relContentPath, regen); err != nil {
+			if err := wiki.copyFileToDest(ctx, contentPath, relContentPath, regen); err != nil {
 				util.PrintError(err, "failed to copy '%s' to dest", contentPath)
 				// Cap error collection to prevent OOM from massive error accumulation
 				if len(processingErrors) < MaxProcessingErrors {

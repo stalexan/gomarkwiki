@@ -239,6 +239,168 @@ func TestCollisionDetectionDeterministic(t *testing.T) {
 	success = true
 }
 
+// TestCollisionDetectionNestedDirs tests that collision detection works correctly
+// with nested directory structures. It verifies:
+// 1. Files in the same nested directory collide (e.g., dir/test.md and dir/test.markdown)
+// 2. Files with the same name in different directories don't collide (e.g., a/test.md and b/test.md)
+// 3. Collision resolution is deterministic based on lexicographic ordering by full path
+func TestCollisionDetectionNestedDirs(t *testing.T) {
+	// Create temp dir.
+	var testCaseTempDir string
+	var err error
+	var success bool
+	if testCaseTempDir, err = os.MkdirTemp(tempDir, "collision-nested-test"); err != nil {
+		t.Fatalf("Error creating test case temp directory: %v", err)
+	}
+	defer func() {
+		if success {
+			t.Logf("Removing test case temp directory %s", testCaseTempDir)
+			if err := os.RemoveAll(testCaseTempDir); err != nil {
+				t.Fatalf("Error removing test case temp directory: %v", err)
+			}
+		}
+	}()
+	t.Logf("Created test case temp directory %s", testCaseTempDir)
+
+	// Create source directory structure
+	sourceDir := filepath.Join(testCaseTempDir, "source")
+	contentDir := filepath.Join(sourceDir, "content")
+	if err = os.MkdirAll(contentDir, 0755); err != nil {
+		t.Fatalf("Failed to create content directory %s: %v", contentDir, err)
+	}
+
+	// Create nested directories
+	dirA := filepath.Join(contentDir, "dirA")
+	dirB := filepath.Join(contentDir, "dirB")
+	dirC := filepath.Join(contentDir, "dirC")
+	if err = os.MkdirAll(dirA, 0755); err != nil {
+		t.Fatalf("Failed to create directory %s: %v", dirA, err)
+	}
+	if err = os.MkdirAll(dirB, 0755); err != nil {
+		t.Fatalf("Failed to create directory %s: %v", dirB, err)
+	}
+	if err = os.MkdirAll(dirC, 0755); err != nil {
+		t.Fatalf("Failed to create directory %s: %v", dirC, err)
+	}
+
+	// Create test files:
+	// 1. In dirA: collision between test.markdown and test.md (test.markdown should win)
+	// 2. In dirB: single file page.md (no collision)
+	// 3. In dirC: collision between page.md and page.mdwn (page.md should win)
+	// 4. Files named "common.md" in both dirA and dirB (no collision - different output paths)
+	files := []struct {
+		path             string
+		content          string
+		shouldBeInOutput bool   // Whether this file should generate output
+		outputPath       string // Expected output path relative to output dir
+	}{
+		// dirA files - test.markdown should win the collision
+		{"dirA/test.markdown", "# DirA Test Markdown", true, "dirA/test.html"},
+		{"dirA/test.md", "# DirA Test MD", false, ""},
+
+		// Both directories have common.md - no collision (different output paths)
+		{"dirA/common.md", "# DirA Common", true, "dirA/common.html"},
+		{"dirB/common.md", "# DirB Common", true, "dirB/common.html"},
+
+		// dirB single file
+		{"dirB/page.md", "# DirB Page", true, "dirB/page.html"},
+
+		// dirC files - page.md should win the collision (lexicographically before page.mdwn)
+		{"dirC/page.md", "# DirC Page MD", true, "dirC/page.html"},
+		{"dirC/page.mdwn", "# DirC Page MDWN", false, ""},
+	}
+
+	for _, f := range files {
+		filePath := filepath.Join(contentDir, f.path)
+		if err = os.WriteFile(filePath, []byte(f.content), 0644); err != nil {
+			t.Fatalf("Failed to create file %s: %v", filePath, err)
+		}
+	}
+
+	// Create static directory (required by NewWiki)
+	staticDir := filepath.Join(sourceDir, "static")
+	if err = os.MkdirAll(staticDir, 0755); err != nil {
+		t.Fatalf("Failed to create static directory %s: %v", staticDir, err)
+	}
+
+	// Create output dir
+	outputDir := filepath.Join(testCaseTempDir, "output")
+	if err = os.MkdirAll(outputDir, 0755); err != nil {
+		t.Fatalf("Failed to create directory %s: %v", outputDir, err)
+	}
+
+	// Create Wiki instance
+	var theWiki *Wiki
+	if theWiki, err = NewWiki(sourceDir, outputDir); err != nil {
+		t.Fatalf("Error creating Wiki instance: %v", err)
+	}
+
+	// Run generation multiple times to verify deterministic behavior
+	for i := 0; i < 3; i++ {
+		// Clean output directory between runs
+		if err = os.RemoveAll(outputDir); err != nil {
+			t.Fatalf("Failed to clean output directory: %v", err)
+		}
+		if err = os.MkdirAll(outputDir, 0755); err != nil {
+			t.Fatalf("Failed to recreate output directory: %v", err)
+		}
+
+		// Generate wiki
+		if err = theWiki.Generate(context.Background(), true, false, false, "test"); err != nil {
+			t.Fatalf("Error generating wiki (run %d): %v", i+1, err)
+		}
+
+		// Verify expected outputs
+		for _, f := range files {
+			if f.shouldBeInOutput {
+				outputPath := filepath.Join(outputDir, f.outputPath)
+
+				// Check file exists
+				if _, err = os.Stat(outputPath); err != nil {
+					t.Fatalf("Expected output file %s not found (run %d): %v", outputPath, i+1, err)
+				}
+
+				// Check content matches expected source
+				htmlContent, err := os.ReadFile(outputPath)
+				if err != nil {
+					t.Fatalf("Failed to read output file %s: %v", outputPath, err)
+				}
+
+				// Extract the first line of the markdown content for verification
+				expectedContent := f.content[2:] // Remove "# " prefix
+				if !strings.Contains(string(htmlContent), expectedContent) {
+					t.Fatalf("Output file %s does not contain expected content '%s' (run %d). Content: %s",
+						outputPath, expectedContent, i+1, string(htmlContent)[:min(200, len(htmlContent))])
+				}
+			}
+		}
+
+		// Count total HTML files to ensure we have exactly the expected number
+		htmlFiles := 0
+		err = filepath.Walk(outputDir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if !info.IsDir() && filepath.Ext(path) == ".html" {
+				htmlFiles++
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("Error walking output directory: %v", err)
+		}
+
+		// Should have exactly 5 HTML files:
+		// dirA/test.html, dirA/common.html, dirB/common.html, dirB/page.html, dirC/page.html
+		expectedCount := 5
+		if htmlFiles != expectedCount {
+			t.Fatalf("Expected exactly %d HTML files, found %d (run %d)", expectedCount, htmlFiles, i+1)
+		}
+	}
+
+	success = true
+}
+
 // TestIgnoreFileSkipsBlankAndCommentLines ensures ignore.txt parsing skips blank/comment lines.
 func TestIgnoreFileSkipsBlankAndCommentLines(t *testing.T) {
 	var err error

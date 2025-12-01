@@ -85,14 +85,9 @@ func (wiki Wiki) generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath,
 	outPath := filepath.Join(wiki.DestDir, relDestPath)
 	outDir := filepath.Dir(outPath)
 
-	// Skip generating the HTML if markdown is older than current HTML.
-	// Note: We use mdInfo here, but if the file is deleted before reading, we'll handle that below.
-	if !regen && sourceIsOlder(mdInfo, outPath) {
-		return relDestPath, nil
-	}
-	util.PrintVerbose("Generating '%s'", outPath)
-
-	// Re-stat the file right before reading to get current info and prevent TOCTOU issues.
+	// Re-stat the file to get current info and prevent TOCTOU issues.
+	// This must happen BEFORE the skip decision to avoid a race condition where the file
+	// changes between the Walk and the regeneration decision.
 	currentInfo, err := os.Stat(mdPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -107,6 +102,13 @@ func (wiki Wiki) generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath,
 	if currentInfo.Size() > MaxMarkdownFileSize {
 		return "", fmt.Errorf("markdown file '%s' is too large (%d bytes, max %d bytes)", mdPath, currentInfo.Size(), MaxMarkdownFileSize)
 	}
+
+	// Skip generating the HTML if markdown is older than current HTML.
+	// Use currentInfo (not mdInfo) to ensure we have the latest modification time.
+	if !regen && sourceIsOlder(currentInfo, outPath) {
+		return relDestPath, nil
+	}
+	util.PrintVerbose("Generating '%s'", outPath)
 
 	// Read markdown file.
 	var data []byte

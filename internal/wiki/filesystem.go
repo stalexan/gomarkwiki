@@ -175,10 +175,23 @@ func (wiki Wiki) copyFileToDest(ctx context.Context, sourceInfo fs.FileInfo, sou
 	default:
 	}
 
+	// Re-stat the file to get current info and prevent TOCTOU issues.
+	// This must happen BEFORE the skip decision to avoid a race condition where the file
+	// changes between the Walk and the copy decision.
+	currentInfo, err := os.Stat(sourcePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			util.PrintVerbose("'%s' was not copied to dest because it no longer exists", sourcePath)
+			return nil
+		} else {
+			return fmt.Errorf("failed to stat source file '%s': %v", sourcePath, err)
+		}
+	}
+
 	// Skip copying if source is older than dest.
-	// Note: We use sourceInfo here, but if the file is deleted before opening, we'll handle that below.
+	// Use currentInfo (not sourceInfo) to ensure we have the latest modification time.
 	destPath := filepath.Join(wiki.DestDir, sourceRelPath)
-	if !regen && sourceIsOlder(sourceInfo, destPath) {
+	if !regen && sourceIsOlder(currentInfo, destPath) {
 		return nil
 	}
 

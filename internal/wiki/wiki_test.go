@@ -663,7 +663,10 @@ func TestRemoveFileExtension(t *testing.T) {
 		{"path/to/file.md", "path/to/file"},
 		{"file.tar.gz", "file.tar"},
 		{"file", "file"},
-		{".hidden", ""},
+		{".hidden", ".hidden"},           // Dotfile without extension should remain unchanged
+		{".hidden.md", ".hidden"},        // Dotfile with extension should have extension removed
+		{"path/.hidden", "path/.hidden"}, // Dotfile in path without extension
+		{".gitignore", ".gitignore"},     // Another common dotfile
 	}
 
 	for _, tt := range tests {

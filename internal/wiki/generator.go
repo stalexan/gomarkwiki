@@ -28,8 +28,17 @@ func isPathMarkdown(path string) bool {
 }
 
 // removeFileExtension removes the file extension from path; e.g. Foo/Bar.md becomes Foo/Bar
+// Dotfiles without extensions (e.g., .hidden) are left unchanged.
 func removeFileExtension(path string) string {
 	extension := filepath.Ext(path)
+	base := filepath.Base(path)
+
+	// If this is a dotfile (starts with . and has no real extension),
+	// filepath.Ext returns the whole name. Don't remove it.
+	if strings.HasPrefix(base, ".") && extension == base {
+		return path
+	}
+
 	return path[:len(path)-len(extension)]
 }
 

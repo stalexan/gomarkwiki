@@ -193,6 +193,7 @@ func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version st
 	relDestPaths := map[string]bool{}
 	sourceFileMap := map[string]string{} // Track which source file generated each HTML path
 	fileCount := 0
+	allFilesEncountered := 0 // Track ALL files encountered, including errors
 	baseDepth := strings.Count(wiki.ContentDir, string(filepath.Separator))
 	var processingErrors []error
 	err := filepath.Walk(wiki.ContentDir, func(contentPath string, info fs.FileInfo, err error) error {
@@ -201,6 +202,13 @@ func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version st
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
+		}
+
+		// Check total files encountered limit FIRST, before any processing
+		// This prevents DoS via massive error collection when permissions fail on large trees
+		allFilesEncountered++
+		if allFilesEncountered > MaxFilesProcessed {
+			return fmt.Errorf("maximum number of files encountered exceeded (%d files, max %d files)", allFilesEncountered, MaxFilesProcessed)
 		}
 
 		// Check recursion depth
@@ -217,7 +225,10 @@ func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version st
 		// Was there an error looking up this file?
 		if err != nil {
 			util.PrintError(err, "failed to lookup info on '%s'", contentPath)
-			processingErrors = append(processingErrors, fmt.Errorf("failed to lookup info on '%s': %w", contentPath, err))
+			// Cap error collection to prevent OOM from massive error accumulation
+			if len(processingErrors) < MaxProcessingErrors {
+				processingErrors = append(processingErrors, fmt.Errorf("failed to lookup info on '%s': %w", contentPath, err))
+			}
 			return nil
 		}
 
@@ -245,7 +256,10 @@ func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version st
 		relContentPath, err = filepath.Rel(wiki.ContentDir, contentPath)
 		if err != nil {
 			util.PrintError(err, "failed to find relative path of '%s' given '%s'", contentPath, wiki.ContentDir)
-			processingErrors = append(processingErrors, fmt.Errorf("failed to find relative path of '%s': %w", contentPath, err))
+			// Cap error collection to prevent OOM from massive error accumulation
+			if len(processingErrors) < MaxProcessingErrors {
+				processingErrors = append(processingErrors, fmt.Errorf("failed to find relative path of '%s': %w", contentPath, err))
+			}
 			return nil
 		}
 
@@ -275,7 +289,10 @@ func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version st
 			relDestPath, err = wiki.generateHtmlFromMarkdown(info, contentPath, relContentPath, relDestPath, regen, version)
 			if err != nil {
 				util.PrintError(err, "failed to generate HTML for '%s'", contentPath)
-				processingErrors = append(processingErrors, fmt.Errorf("failed to generate HTML for '%s': %w", contentPath, err))
+				// Cap error collection to prevent OOM from massive error accumulation
+				if len(processingErrors) < MaxProcessingErrors {
+					processingErrors = append(processingErrors, fmt.Errorf("failed to generate HTML for '%s': %w", contentPath, err))
+				}
 				// Still record the destination path to prevent deletion of existing output file.
 				// This is critical when using -clean flag to avoid deleting valid HTML on transient errors.
 				if relDestPath != "" {
@@ -293,7 +310,10 @@ func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version st
 			relDestPath = relContentPath
 			if err := wiki.copyFileToDest(ctx, info, contentPath, relContentPath, regen); err != nil {
 				util.PrintError(err, "failed to copy '%s' to dest", contentPath)
-				processingErrors = append(processingErrors, fmt.Errorf("failed to copy '%s': %w", contentPath, err))
+				// Cap error collection to prevent OOM from massive error accumulation
+				if len(processingErrors) < MaxProcessingErrors {
+					processingErrors = append(processingErrors, fmt.Errorf("failed to copy '%s': %w", contentPath, err))
+				}
 				// Still record the destination path to prevent deletion of existing output file.
 				// This is critical when using -clean flag to avoid deleting valid files on transient errors.
 				if relDestPath != "" {
@@ -317,6 +337,9 @@ func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version st
 	// Return collected processing errors if any occurred
 	if len(processingErrors) > 0 {
 		errMsg := fmt.Sprintf("failed to process %d file(s)", len(processingErrors))
+		if len(processingErrors) >= MaxProcessingErrors {
+			errMsg += " (error limit reached, additional errors may exist)"
+		}
 		for i, e := range processingErrors {
 			errMsg += fmt.Sprintf("\n  %d. %v", i+1, e)
 		}

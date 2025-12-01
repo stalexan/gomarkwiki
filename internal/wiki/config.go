@@ -23,6 +23,10 @@ const (
 
 	// MaxRecursionDepth is the maximum directory recursion depth allowed
 	MaxRecursionDepth = 1000 // 1000 levels
+
+	// MaxProcessingErrors is the maximum number of processing errors to collect before stopping
+	// This prevents OOM when encountering large numbers of permission errors or other failures
+	MaxProcessingErrors = 1000
 )
 
 // validatePlaceholder validates a placeholder name according to the rules:

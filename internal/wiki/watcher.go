@@ -492,12 +492,9 @@ func (w *Watcher) waitForStability(ctx context.Context) ([]fileSnapshot, error) 
 			}
 
 			// Calculate wait time (exponential backoff: 2^n)
-			// Cap shift to prevent integer overflow at high waitPass values.
-			// At shift > 30, the multiplication can overflow and produce negative durations.
+			// MAX_CHANGE_WAIT caps the wait time to prevent excessive delays.
+			// For the current values, this kicks in at waitPass >= 7.
 			shift := waitPass - 1
-			if shift > 30 {
-				shift = 30
-			}
 			waitTime := CHANGE_WAIT * (1 << shift)
 			if waitTime > MAX_CHANGE_WAIT {
 				waitTime = MAX_CHANGE_WAIT

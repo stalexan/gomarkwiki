@@ -183,7 +183,7 @@ func (wiki Wiki) generateHtmlFromMarkdown(mdInfo fs.FileInfo, mdPath, mdRelPath,
 // (e.g., "foo.md" and "foo.markdown" both generate "foo.html"), the first file
 // encountered during the walk wins, and subsequent files are skipped with a warning.
 // The ordering is deterministic because filepath.Walk processes files in lexicographic
-// order (as returned by the filesystem), ensuring consistent collision resolution
+// order (guaranteed by Go 1.16+), ensuring consistent collision resolution
 // across regeneration cycles in watch mode.
 func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version string) (map[string]bool, error) {
 	// Walk the source directory and generate the wiki from the files found.

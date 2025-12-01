@@ -198,7 +198,7 @@ func (wiki Wiki) copyFileToDest(ctx context.Context, sourcePath, sourceRelPath s
 	// Create dest dir if it doesn't exist.
 	// os.MkdirAll is idempotent, so no need to check existence first (avoids TOCTOU).
 	destDirPath := filepath.Dir(destPath)
-	if err := os.MkdirAll(destDirPath, os.ModePerm); err != nil {
+	if err := os.MkdirAll(destDirPath, 0755); err != nil {
 		return fmt.Errorf("failed to create dest dir '%s': %v", destDirPath, err)
 	}
 

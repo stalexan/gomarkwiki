@@ -136,6 +136,12 @@ func (wiki *Wiki) Generate(ctx context.Context, regen, clean, watch bool, versio
 }
 
 // generate generates the wiki.
+//
+// Error handling strategy:
+// - Fail-soft: Continue processing files even when some fail, to provide complete error visibility
+// - Safe partial output: CSS is copied for successfully processed files to make them usable
+// - Clean protection: -clean is skipped entirely if ANY errors occur, preventing deletion of valid files
+// - Complete reporting: All file processing errors are collected and returned together at the end
 func (wiki *Wiki) generate(ctx context.Context, regen, clean bool, version string) error {
 	// Check for cancellation before starting
 	if ctx.Err() != nil {
@@ -156,6 +162,9 @@ func (wiki *Wiki) generate(ctx context.Context, regen, clean bool, version strin
 	}
 
 	// Copy css files to destDir (even with partial results).
+	// This ensures successfully processed HTML files are usable and properly styled.
+	// If there were processing errors, the final error return will inform the user,
+	// but the partial output remains accessible and functional.
 	if err := wiki.copyCssFiles(ctx, relDestPaths); err != nil {
 		return errors.Join(processingErr, err)
 	}

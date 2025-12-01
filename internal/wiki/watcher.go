@@ -749,10 +749,16 @@ func takeFilesSnapshot(ctx context.Context, dir string) ([]fileSnapshot, error) 
 			return err
 		}
 
+		// Look up file size. (Directory size is filesystem-dependent and meaningless for change detection
+		size := info.Size()
+		if info.IsDir() {
+			size = 0
+		}
+
 		snapshot := fileSnapshot{
 			name:      path,
 			timestamp: info.ModTime().UnixNano(),
-			size:      info.Size(),
+			size:      size,
 			isDir:     info.IsDir(),
 		}
 		snapshots = append(snapshots, snapshot)

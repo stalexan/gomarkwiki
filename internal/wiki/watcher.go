@@ -438,6 +438,9 @@ func (w *Watcher) waitForStability(ctx context.Context) ([]fileSnapshot, error) 
 		var err error
 
 		// Loop until snapshots match (indicating stability)
+		// Note: While this loop has no explicit pass limit, it's bounded by the parent
+		// context timeout (MAX_REGEN_INTERVAL = 10 minutes), which ensures a clean exit
+		// even if files never stabilize (e.g., continuous filesystem modifications).
 		for waitPass := 1; !filesSnapshotsAreEqual(snapshot1, snapshot2); waitPass++ {
 			// Check for cancellation
 			select {

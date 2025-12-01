@@ -90,6 +90,7 @@ func sourceIsOlder(sourceInfo fs.FileInfo, destPath string) bool {
 }
 
 // copyToFile copies source to the file at destPath, overwriting destPath if it exists.
+// For large files, the copy operation respects context cancellation.
 func copyToFile(ctx context.Context, destPath string, source io.Reader) (err error) {
 	// Create and open dest file. Truncate it if it exists.
 	var destFile *os.File
@@ -102,10 +103,39 @@ func copyToFile(ctx context.Context, destPath string, source io.Reader) (err err
 		}
 	}()
 
-	// Copy source to destFile.
-	// Note: io.Copy is fast for typical file sizes, so we don't check context during copy.
-	if _, err = io.Copy(destFile, source); err != nil {
-		return fmt.Errorf("failed to write to '%s': %v", destPath, err)
+	// Copy source to destFile with context cancellation support.
+	// We check context periodically during the copy to allow cancellation
+	// of large file operations.
+	const bufSize = 32 * 1024 // 32KB chunks
+	buf := make([]byte, bufSize)
+
+	for {
+		// Check for cancellation before each chunk
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("copy cancelled: %w", ctx.Err())
+		default:
+		}
+
+		// Read chunk
+		nr, readErr := source.Read(buf)
+		if nr > 0 {
+			// Write chunk
+			nw, writeErr := destFile.Write(buf[:nr])
+			if writeErr != nil {
+				return fmt.Errorf("failed to write to '%s': %v", destPath, writeErr)
+			}
+			if nw != nr {
+				return fmt.Errorf("failed to write to '%s': short write", destPath)
+			}
+		}
+
+		if readErr != nil {
+			if readErr == io.EOF {
+				break
+			}
+			return fmt.Errorf("failed to read source: %v", readErr)
+		}
 	}
 
 	return nil

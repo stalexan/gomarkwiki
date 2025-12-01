@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -792,5 +791,22 @@ func filesSnapshotsAreEqual(snapshot1, snapshot2 []fileSnapshot) bool {
 	if snapshot1 == nil || snapshot2 == nil {
 		return false
 	}
-	return reflect.DeepEqual(snapshot1, snapshot2)
+
+	// Quick length check
+	if len(snapshot1) != len(snapshot2) {
+		return false
+	}
+
+	// Compare each snapshot
+	for i := range snapshot1 {
+		s1, s2 := &snapshot1[i], &snapshot2[i]
+		if s1.name != s2.name ||
+			s1.timestamp != s2.timestamp ||
+			s1.size != s2.size ||
+			s1.isDir != s2.isDir {
+			return false
+		}
+	}
+
+	return true
 }

@@ -340,7 +340,9 @@ func (w *Watcher) waitForEvent(ctx context.Context) (bool, bool, error) {
 	// the channel references but before the select below, this is safe because:
 	// 1. Close() calls w.cancel(), triggering ctx.Done() in the select
 	// 2. Close() closes the fsnotify channels, which we detect via ok == false
-	// 3. Reading from closed channels in Go returns immediately (no panic)
+	// 3. When ok == false, we check ctx.Done() to distinguish graceful shutdown
+	//    from unexpected channel closure, preventing spurious errors on Ctrl-C
+	// 4. Reading from closed channels in Go returns immediately (no panic)
 	// This multi-layered defense ensures graceful shutdown without races.
 	w.mu.Lock()
 	if w.fsWatcher == nil {
@@ -354,7 +356,13 @@ func (w *Watcher) waitForEvent(ctx context.Context) (bool, bool, error) {
 	select {
 	case event, ok := <-eventsChan:
 		if !ok {
-			return false, false, fmt.Errorf("watcher unexpectedly closed while watching '%s'", w.contentDir)
+			// Channel closed - check if this is due to graceful shutdown
+			select {
+			case <-ctx.Done():
+				return false, false, nil // Graceful shutdown
+			default:
+				return false, false, fmt.Errorf("watcher unexpectedly closed while watching '%s'", w.contentDir)
+			}
 		}
 		util.PrintDebug("Watcher event detected for %s: %v", w.contentDir, event)
 
@@ -389,7 +397,13 @@ func (w *Watcher) waitForEvent(ctx context.Context) (bool, bool, error) {
 
 	case err, ok := <-errorsChan:
 		if !ok {
-			return false, false, fmt.Errorf("failed to read watcher error for %s", w.contentDir)
+			// Channel closed - check if this is due to graceful shutdown
+			select {
+			case <-ctx.Done():
+				return false, false, nil // Graceful shutdown
+			default:
+				return false, false, fmt.Errorf("failed to read watcher error for %s", w.contentDir)
+			}
 		}
 		return false, false, fmt.Errorf("watcher error for %s: %v", w.contentDir, err)
 

@@ -137,11 +137,13 @@ func (wiki *Wiki) Generate(ctx context.Context, regen, clean, watch bool, versio
 
 // generate generates the wiki.
 //
-// Error handling strategy:
-// - Fail-soft: Continue processing files even when some fail, to provide complete error visibility
+// Error handling strategy (fail-soft):
+// - Continue processing: Process all files even when some fail, to provide complete error visibility
+// - Partial success: As long as ANY files succeed, the build is considered successful (exit 0)
 // - Safe partial output: CSS is copied for successfully processed files to make them usable
 // - Clean protection: -clean is skipped entirely if ANY errors occur, preventing deletion of valid files
-// - Complete reporting: All file processing errors are collected and returned together at the end
+// - Complete error logging: All file processing errors are logged, but don't fail the build
+// - Only fail on total failure: Return error only if no files were processed successfully
 func (wiki *Wiki) generate(ctx context.Context, regen, clean bool, version string) error {
 	// Check for cancellation before starting
 	if ctx.Err() != nil {
@@ -163,10 +165,13 @@ func (wiki *Wiki) generate(ctx context.Context, regen, clean bool, version strin
 
 	// Copy css files to destDir (even with partial results).
 	// This ensures successfully processed HTML files are usable and properly styled.
-	// If there were processing errors, the final error return will inform the user,
-	// but the partial output remains accessible and functional.
 	if err := wiki.copyCssFiles(ctx, relDestPaths); err != nil {
-		return errors.Join(processingErr, err)
+		util.PrintError(err, "failed to copy CSS files")
+		// If no files were processed and CSS also failed, this is a total failure
+		if len(relDestPaths) == 0 {
+			return errors.Join(processingErr, err)
+		}
+		// Otherwise, CSS failure is logged but doesn't fail the build if files were processed
 	}
 
 	// Check for cancellation before cleaning
@@ -186,6 +191,20 @@ func (wiki *Wiki) generate(ctx context.Context, regen, clean bool, version strin
 		util.PrintWarning("Skipping clean due to processing errors - would risk deleting valid files")
 	}
 
-	// Return the processing error at the end (if any)
-	return processingErr
+	// Partial success is success: If any files were processed, return success even if some failed.
+	// Only fail if nothing was processed (total failure).
+	if len(relDestPaths) > 0 {
+		if processingErr != nil {
+			util.PrintWarning("Build completed with errors, but %d file(s) were successfully processed", len(relDestPaths))
+		}
+		return nil
+	}
+
+	// Total failure: No files were processed successfully
+	if processingErr != nil {
+		return processingErr
+	}
+
+	// Edge case: No errors but also no files processed (empty source directory?)
+	return nil
 }

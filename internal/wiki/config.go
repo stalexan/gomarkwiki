@@ -85,9 +85,13 @@ func (wiki *Wiki) loadSubstitutionStrings() error {
 	// Save substitutions.
 	seenPlaceholders := make(map[string]int)
 	for i, pair := range pairs {
-		placeholder := strings.TrimSpace(pair[0])
+		originalPlaceholder := pair[0]
+		placeholder := strings.TrimSpace(originalPlaceholder)
 
 		// Validate placeholder
+		if len(originalPlaceholder) > 0 && len(placeholder) == 0 {
+			return fmt.Errorf("placeholder at line %d contains only whitespace", i+1)
+		}
 		if err := validatePlaceholder(placeholder); err != nil {
 			return fmt.Errorf("invalid placeholder at line %d: %v", i+1, err)
 		}

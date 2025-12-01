@@ -311,8 +311,9 @@ func TestIgnoreFileSkipsBlankAndCommentLines(t *testing.T) {
 	}
 }
 
-// TestConfigPathsSetWhenFilesMissing ensures Wiki records config file paths even when files are absent.
-func TestConfigPathsSetWhenFilesMissing(t *testing.T) {
+// TestConfigPathsNotSetWhenFilesMissing ensures Wiki does not set subsPath when file is absent.
+// Note: ignorePath is still set even when file is missing (different behavior from subsPath).
+func TestConfigPathsNotSetWhenFilesMissing(t *testing.T) {
 	var err error
 
 	testCaseTempDir, err := os.MkdirTemp(tempDir, "config-paths")
@@ -350,15 +351,69 @@ func TestConfigPathsSetWhenFilesMissing(t *testing.T) {
 		t.Fatalf("Error creating Wiki instance: %v", err)
 	}
 
-	expectedSubs := filepath.Join(sourceDir, "substitution-strings.csv")
 	expectedIgnore := filepath.Join(sourceDir, "ignore.txt")
 
-	if theWiki.subsPath != expectedSubs {
-		t.Fatalf("Expected subsPath to be %s, got %s", expectedSubs, theWiki.subsPath)
+	// subsPath should be empty when file doesn't exist
+	if theWiki.subsPath != "" {
+		t.Fatalf("Expected subsPath to be empty when file missing, got %s", theWiki.subsPath)
 	}
 
+	// ignorePath is still set even when file is missing (different behavior)
 	if theWiki.ignorePath != expectedIgnore {
 		t.Fatalf("Expected ignorePath to be %s, got %s", expectedIgnore, theWiki.ignorePath)
+	}
+}
+
+// TestConfigPathsSetWhenFilesExist ensures Wiki sets subsPath when substitution file exists.
+func TestConfigPathsSetWhenFilesExist(t *testing.T) {
+	var err error
+
+	testCaseTempDir, err := os.MkdirTemp(tempDir, "config-paths-exist")
+	if err != nil {
+		t.Fatalf("Error creating test case temp directory: %v", err)
+	}
+	defer func() {
+		t.Logf("Removing test case temp directory %s", testCaseTempDir)
+		if err := os.RemoveAll(testCaseTempDir); err != nil {
+			t.Fatalf("Error removing test case temp directory: %v", err)
+		}
+	}()
+
+	sourceDir := filepath.Join(testCaseTempDir, "source")
+	contentDir := filepath.Join(sourceDir, "content")
+	staticDir := filepath.Join(sourceDir, "static")
+	outputDir := filepath.Join(testCaseTempDir, "output")
+
+	for _, dir := range []string{contentDir, staticDir, outputDir} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatalf("Failed to create directory %s: %v", dir, err)
+		}
+	}
+
+	// Required static files for generation
+	if err := copyFile(stylePath, staticDir); err != nil {
+		t.Fatalf("Failed to copy style.css: %v", err)
+	}
+	if err := copyFile(githubStylePath, staticDir); err != nil {
+		t.Fatalf("Failed to copy github-style.css: %v", err)
+	}
+
+	// Create substitution strings file
+	subsPath := filepath.Join(sourceDir, "substitution-strings.csv")
+	if err := os.WriteFile(subsPath, []byte("TEST,value"), 0644); err != nil {
+		t.Fatalf("Failed to write substitution file: %v", err)
+	}
+
+	theWiki, err := NewWiki(sourceDir, outputDir)
+	if err != nil {
+		t.Fatalf("Error creating Wiki instance: %v", err)
+	}
+
+	expectedSubs := filepath.Join(sourceDir, "substitution-strings.csv")
+
+	// subsPath should be set when file exists
+	if theWiki.subsPath != expectedSubs {
+		t.Fatalf("Expected subsPath to be %s when file exists, got %s", expectedSubs, theWiki.subsPath)
 	}
 }
 

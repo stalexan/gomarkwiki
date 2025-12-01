@@ -66,11 +66,11 @@ func validatePlaceholder(placeholder string) error {
 func (wiki *Wiki) loadSubstitutionStrings() error {
 	// Start with no substitution strings.
 	wiki.subStrings = nil
+	wiki.subsPath = ""
 
 	// Is there a substitution strings file?
 	const subsFileName = "substitution-strings.csv"
 	candidateSubsPath := filepath.Join(wiki.SourceDir, subsFileName)
-	wiki.subsPath = filepath.Clean(candidateSubsPath)
 
 	var pairs [][2]string
 	var err error
@@ -81,6 +81,9 @@ func (wiki *Wiki) loadSubstitutionStrings() error {
 		// There's either no substitution strings file or the file is empty.
 		return nil
 	}
+
+	// File exists and has content - set the path.
+	wiki.subsPath = filepath.Clean(candidateSubsPath)
 
 	// Save substitutions.
 	seenPlaceholders := make(map[string]int)

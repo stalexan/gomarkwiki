@@ -293,11 +293,9 @@ func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version st
 				if len(processingErrors) < MaxProcessingErrors {
 					processingErrors = append(processingErrors, fmt.Errorf("failed to generate HTML for '%s': %w", contentPath, err))
 				}
-				// Still record the destination path to prevent deletion of existing output file.
-				// This is critical when using -clean flag to avoid deleting valid HTML on transient errors.
-				if relDestPath != "" {
-					relDestPaths[relDestPath] = true
-				}
+				// Note: relDestPath is always "" on error, so we can't record it for per-file protection.
+				// Existing output files are protected by the macro-level check (processingErr != nil)
+				// which skips cleaning entirely when ANY errors occur.
 				return nil
 			}
 

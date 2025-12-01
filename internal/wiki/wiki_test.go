@@ -640,7 +640,7 @@ func TestIsPathMarkdown(t *testing.T) {
 		{"file.markdown", true},
 		{"file.txt", false},
 		{"file.html", false},
-		{"file.MD", false}, // case sensitive
+		{"file.MD", true}, // case-insensitive - .MD is recognized
 		{"path/to/file.md", true},
 		{"file", false},
 	}

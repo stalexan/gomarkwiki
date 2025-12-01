@@ -1213,7 +1213,7 @@ func TestTakeFilesSnapshot(t *testing.T) {
 	os.WriteFile(filepath.Join(tmpDir, "file1.txt"), []byte("content"), 0644)
 	os.WriteFile(filepath.Join(subdir, "file2.txt"), []byte("content"), 0644)
 
-	snapshot, err := takeFilesSnapshot(context.Background(), tmpDir)
+	snapshot, err := takeFilesSnapshot(context.Background(), tmpDir, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1245,6 +1245,63 @@ func TestTakeFilesSnapshot(t *testing.T) {
 	}
 	if !foundSubdir {
 		t.Error("snapshot should contain subdir")
+	}
+}
+
+func TestTakeFilesSnapshotWithIgnorePatterns(t *testing.T) {
+	tmpDir, err := os.MkdirTemp(tempDir, "snapshot-ignore-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create test structure with files that should be ignored
+	os.WriteFile(filepath.Join(tmpDir, "include.txt"), []byte("content"), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "exclude.log"), []byte("content"), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "temp.tmp"), []byte("content"), 0644)
+
+	logDir := filepath.Join(tmpDir, "logs")
+	os.MkdirAll(logDir, 0755)
+	os.WriteFile(filepath.Join(logDir, "debug.log"), []byte("content"), 0644)
+
+	// Create ignore matcher with patterns to exclude .log, .tmp files and logs directory
+	ignorePatterns := []string{"*.log", "*.tmp", "logs/"}
+	ignoreMatcher, err := NewIgnoreMatcher(ignorePatterns)
+	if err != nil {
+		t.Fatalf("failed to create ignore matcher: %v", err)
+	}
+
+	// Take snapshot with ignore patterns
+	snapshot, err := takeFilesSnapshot(context.Background(), tmpDir, ignoreMatcher)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify ignored files are not in snapshot
+	for _, s := range snapshot {
+		if s.name == filepath.Join(tmpDir, "exclude.log") {
+			t.Error("snapshot should not contain exclude.log (it should be ignored)")
+		}
+		if s.name == filepath.Join(tmpDir, "temp.tmp") {
+			t.Error("snapshot should not contain temp.tmp (it should be ignored)")
+		}
+		if s.name == logDir {
+			t.Error("snapshot should not contain logs directory (it should be ignored)")
+		}
+		if s.name == filepath.Join(logDir, "debug.log") {
+			t.Error("snapshot should not contain debug.log inside logs directory")
+		}
+	}
+
+	// Verify included files are in snapshot
+	foundInclude := false
+	for _, s := range snapshot {
+		if s.name == filepath.Join(tmpDir, "include.txt") {
+			foundInclude = true
+		}
+	}
+	if !foundInclude {
+		t.Error("snapshot should contain include.txt")
 	}
 }
 

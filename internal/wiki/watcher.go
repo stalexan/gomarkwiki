@@ -63,10 +63,11 @@ type fileSnapshot struct {
 // for efficiency, and maintains snapshot state to detect rapid changes.
 type Watcher struct {
 	// Configuration
-	contentDir string
-	subsPath   string
-	ignorePath string
-	sourceDir  string // For error messages
+	contentDir    string
+	subsPath      string
+	ignorePath    string
+	sourceDir     string // For error messages
+	ignoreMatcher *IgnoreMatcher
 
 	// Watcher instance (reused across cycles)
 	fsWatcher *fsnotify.Watcher
@@ -107,7 +108,7 @@ type WatchResult struct {
 
 // NewWatcher creates a new Watcher instance for the given directories.
 // The parent context is used for cancellation - when it's cancelled, the watcher will stop.
-func NewWatcher(parentCtx context.Context, contentDir, subsPath, ignorePath, sourceDir string) (*Watcher, error) {
+func NewWatcher(parentCtx context.Context, contentDir, subsPath, ignorePath, sourceDir string, ignoreMatcher *IgnoreMatcher) (*Watcher, error) {
 	fsWatcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create file watcher: %v", err)
@@ -167,6 +168,7 @@ func NewWatcher(parentCtx context.Context, contentDir, subsPath, ignorePath, sou
 		subsPath:         subsPath,
 		ignorePath:       ignorePath,
 		sourceDir:        sourceDir,
+		ignoreMatcher:    ignoreMatcher,
 		fsWatcher:        fsWatcher,
 		subsModTime:      subsModTime,
 		ignoreModTime:    ignoreModTime,
@@ -218,7 +220,7 @@ func (w *Watcher) WaitForChange() (*WatchResult, error) {
 	w.mu.Unlock()
 
 	if snapshot != nil {
-		newSnapshot, err := takeFilesSnapshot(ctx, w.contentDir)
+		newSnapshot, err := takeFilesSnapshot(ctx, w.contentDir, w.ignoreMatcher)
 		if err != nil {
 			return nil, fmt.Errorf("failed to take snapshot for %s: %v", w.contentDir, err)
 		}
@@ -277,7 +279,7 @@ func (w *Watcher) WaitForChange() (*WatchResult, error) {
 
 		// Take fresh snapshot so next cycle has up-to-date state.
 		// Use parent context (w.ctx) since the timeout context already expired.
-		freshSnapshot, err := takeFilesSnapshot(w.ctx, w.contentDir)
+		freshSnapshot, err := takeFilesSnapshot(w.ctx, w.contentDir, w.ignoreMatcher)
 		if err != nil {
 			// Fall back to old snapshot if we can't take a fresh one
 			util.PrintDebug("Failed to take fresh snapshot on timeout, using old snapshot: %v", err)
@@ -497,7 +499,7 @@ func (w *Watcher) waitForStability(ctx context.Context) ([]fileSnapshot, error) 
 			if snapshot2 != nil {
 				snapshot1 = snapshot2
 			} else {
-				snapshot1, err = takeFilesSnapshot(ctx, w.contentDir)
+				snapshot1, err = takeFilesSnapshot(ctx, w.contentDir, w.ignoreMatcher)
 				if err != nil {
 					resultChan <- result{err: fmt.Errorf("failed to take files snapshot for %s: %v", w.contentDir, err)}
 					return
@@ -527,7 +529,7 @@ func (w *Watcher) waitForStability(ctx context.Context) ([]fileSnapshot, error) 
 			}
 
 			// Take after snapshot
-			snapshot2, err = takeFilesSnapshot(ctx, w.contentDir)
+			snapshot2, err = takeFilesSnapshot(ctx, w.contentDir, w.ignoreMatcher)
 			if err != nil {
 				resultChan <- result{err: fmt.Errorf("failed to take files snapshot for %s: %v", w.contentDir, err)}
 				return
@@ -633,14 +635,14 @@ func (wiki *Wiki) watch(ctx context.Context, clean bool, version string) error {
 	util.PrintVerbose("Watching for changes in '%s'", wiki.ContentDir)
 
 	// Create watcher with parent context
-	watcher, err := NewWatcher(ctx, wiki.ContentDir, wiki.subsPath, wiki.ignorePath, wiki.SourceDir)
+	watcher, err := NewWatcher(ctx, wiki.ContentDir, wiki.subsPath, wiki.ignorePath, wiki.SourceDir, wiki.ignoreMatcher)
 	if err != nil {
 		return fmt.Errorf("failed to create watcher: %v", err)
 	}
 	defer watcher.Close()
 
 	// Take initial snapshot
-	initialSnapshot, err := takeFilesSnapshot(ctx, wiki.ContentDir)
+	initialSnapshot, err := takeFilesSnapshot(ctx, wiki.ContentDir, wiki.ignoreMatcher)
 	if err != nil {
 		return fmt.Errorf("failed to take initial snapshot: %v", err)
 	}
@@ -745,7 +747,8 @@ func watchDirRecursive(ctx context.Context, path string, watcher *fsnotify.Watch
 }
 
 // takeFilesSnapshot records the names and  modification times of all files and directories in dir recursively.
-func takeFilesSnapshot(ctx context.Context, dir string) ([]fileSnapshot, error) {
+// Files matching the ignore patterns are excluded from the snapshot.
+func takeFilesSnapshot(ctx context.Context, dir string, ignoreMatcher *IgnoreMatcher) ([]fileSnapshot, error) {
 	var snapshots []fileSnapshot
 	baseDepth := strings.Count(dir, string(filepath.Separator))
 
@@ -769,6 +772,18 @@ func takeFilesSnapshot(ctx context.Context, dir string) ([]fileSnapshot, error) 
 				return filepath.SkipDir
 			}
 			return nil
+		}
+
+		// Check if this file should be ignored
+		if ignoreMatcher != nil {
+			relPath, err := filepath.Rel(dir, path)
+			if err == nil && ignoreMatcher.Matches(relPath, info.IsDir()) {
+				util.PrintDebug("Ignoring '%s' in snapshot", path)
+				if info.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
 		}
 
 		// Look up file size. (Directory size is filesystem-dependent and meaningless for change detection

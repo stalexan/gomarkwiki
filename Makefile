@@ -18,7 +18,7 @@ clean:
 
 .PHONY: test
 test:
-	$(GO) test -v ./internal/wiki
+	$(GO) test -v ./...
 
 .PHONY:fmt
 fmt:

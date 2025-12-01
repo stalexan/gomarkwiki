@@ -16,6 +16,11 @@ import (
 
 // warnIfSymlinkToDir checks if path is a symlink to a directory and prints a warning if so.
 // Returns true if it is a symlink to a directory, false otherwise.
+//
+// Security note: Skipping symlinks to directories is important for two reasons:
+// 1. Prevents symlink loops that could cause infinite recursion
+// 2. Prevents bypassing the MaxRecursionDepth limit via symlinks to deep directory trees
+// filepath.Walk uses os.Lstat internally, so it never follows directory symlinks automatically.
 func warnIfSymlinkToDir(info fs.FileInfo, path string) bool {
 	// Check if this is a symlink
 	// Note: filepath.Walk uses os.Lstat internally, so symlinks will have os.ModeSymlink set.

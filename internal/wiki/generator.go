@@ -202,6 +202,11 @@ func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version st
 		}
 
 		// Check recursion depth
+		// Note: This depth check is based on the path within the content directory tree,
+		// not on any symlink targets. This is correct because filepath.Walk uses os.Lstat
+		// internally and never follows symlinks to directories (they are detected and skipped
+		// by isReadableFile/warnIfSymlinkToDir). This prevents symlink-based bypass of the
+		// depth limit while still allowing symlinks to files in deep system paths.
 		currentDepth := strings.Count(contentPath, string(filepath.Separator)) - baseDepth
 		if currentDepth > MaxRecursionDepth {
 			return fmt.Errorf("directory recursion depth exceeded at '%s' (depth %d, max %d)", contentPath, currentDepth, MaxRecursionDepth)

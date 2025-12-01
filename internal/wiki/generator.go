@@ -40,21 +40,31 @@ var gitHubDirective []byte = []byte("#[style(github)]")
 // returns false.
 func checkForStyleDirective(data []byte) (bool, []byte) {
 	// Strip UTF-8 BOM if present
+	bomStripped := data
 	if len(data) >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF {
-		data = data[3:]
+		bomStripped = data[3:]
 	}
 
 	// Trim leading whitespace only for checking the directive
-	trimmed := bytes.TrimLeft(data, " \t\n\r")
+	trimmed := bytes.TrimLeft(bomStripped, " \t\n\r")
 
 	if bytes.HasPrefix(trimmed, gitHubDirective) {
-		// Directive found: remove it and trim trailing whitespace
-		trimmed = trimmed[len(gitHubDirective):]
-		return true, bytes.TrimSpace(trimmed)
+		// Directive found: remove the directive and consume the rest of the line
+		remaining := trimmed[len(gitHubDirective):]
+
+		// Skip to the end of the directive line (consume up to and including newline)
+		if idx := bytes.IndexByte(remaining, '\n'); idx >= 0 {
+			remaining = remaining[idx+1:]
+		} else {
+			// No newline after directive (file ends with directive)
+			remaining = nil
+		}
+
+		return true, remaining
 	}
 
 	// No directive found: return data (BOM stripped if present, otherwise unchanged)
-	return false, data
+	return false, bomStripped
 }
 
 // generateHtmlFromMarkdown generates an HTML file from a markdown file.

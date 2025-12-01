@@ -91,19 +91,33 @@ func sourceIsOlder(sourceInfo fs.FileInfo, destPath string) bool {
 
 // copyToFile copies source to the file at destPath, overwriting destPath if it exists.
 // For large files, the copy operation respects context cancellation.
+// This function uses atomic write semantics: it writes to a temporary file first,
+// then renames it to the destination. This ensures that on cancellation or error,
+// the destination file is never left in a partially written state.
 func copyToFile(ctx context.Context, destPath string, source io.Reader) (err error) {
-	// Create and open dest file. Truncate it if it exists.
-	var destFile *os.File
-	if destFile, err = os.Create(destPath); err != nil {
-		return fmt.Errorf("failed to open file '%s': %v", destPath, err)
+	// Create temp file in the same directory as the destination.
+	// This ensures the rename will be atomic (same filesystem).
+	destDir := filepath.Dir(destPath)
+	tempFile, err := os.CreateTemp(destDir, ".tmp-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file in '%s': %v", destDir, err)
 	}
+	tempPath := tempFile.Name()
+
+	// Clean up temp file on error or cancellation.
 	defer func() {
-		if closeErr := destFile.Close(); closeErr != nil && err == nil {
-			err = fmt.Errorf("failed to close '%s': %v", destPath, closeErr)
+		if err != nil {
+			os.Remove(tempPath)
 		}
 	}()
 
-	// Copy source to destFile with context cancellation support.
+	defer func() {
+		if closeErr := tempFile.Close(); closeErr != nil && err == nil {
+			err = fmt.Errorf("failed to close temp file '%s': %v", tempPath, closeErr)
+		}
+	}()
+
+	// Copy source to temp file with context cancellation support.
 	// We check context periodically during the copy to allow cancellation
 	// of large file operations.
 	const bufSize = 32 * 1024 // 32KB chunks
@@ -121,12 +135,12 @@ func copyToFile(ctx context.Context, destPath string, source io.Reader) (err err
 		nr, readErr := source.Read(buf)
 		if nr > 0 {
 			// Write chunk
-			nw, writeErr := destFile.Write(buf[:nr])
+			nw, writeErr := tempFile.Write(buf[:nr])
 			if writeErr != nil {
-				return fmt.Errorf("failed to write to '%s': %v", destPath, writeErr)
+				return fmt.Errorf("failed to write to temp file '%s': %v", tempPath, writeErr)
 			}
 			if nw != nr {
-				return fmt.Errorf("failed to write to '%s': short write", destPath)
+				return fmt.Errorf("failed to write to temp file '%s': short write", tempPath)
 			}
 		}
 
@@ -136,6 +150,12 @@ func copyToFile(ctx context.Context, destPath string, source io.Reader) (err err
 			}
 			return fmt.Errorf("failed to read source: %v", readErr)
 		}
+	}
+
+	// Atomically rename temp file to destination.
+	// This is atomic on POSIX systems, ensuring no partial writes are visible.
+	if err := os.Rename(tempPath, destPath); err != nil {
+		return fmt.Errorf("failed to rename temp file '%s' to '%s': %v", tempPath, destPath, err)
 	}
 
 	return nil

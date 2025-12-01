@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"unicode"
 
@@ -121,12 +120,12 @@ func (wiki Wiki) makeSubstitutions(data []byte) []byte {
 	return data
 }
 
-// loadIngoreExpressions loads regular expressions that define which files to ingore.
+// loadIgnoreExpressions loads gitignore-style patterns that define which files to ignore.
 func (wiki *Wiki) loadIgnoreExpressions() error {
-	// Start with no ignore expressions.
-	wiki.ignore = nil
+	// Start with no ignore patterns.
+	wiki.ignoreMatcher = nil
 
-	// Open ingore file, if there is one.
+	// Open ignore file, if there is one.
 	const ignoreFileName = "ignore.txt"
 	ignorePath := filepath.Join(wiki.SourceDir, ignoreFileName)
 	wiki.ignorePath = filepath.Clean(ignorePath)
@@ -142,38 +141,40 @@ func (wiki *Wiki) loadIgnoreExpressions() error {
 	}
 	defer file.Close()
 
-	// Read expressions.
+	// Read patterns.
+	var lines []string
 	scanner := bufio.NewScanner(file)
-	lineCount := 0
 	for scanner.Scan() {
-		lineCount++
-		line := scanner.Text()
-		trimmed := strings.TrimSpace(line)
-
-		// Skip blank lines or comments (lines starting with '#')
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-
-		expression, err := regexp.Compile(trimmed)
-		if err != nil {
-			return fmt.Errorf("error compiling regular expression '%s' on line %d: %v", trimmed, lineCount, err)
-		}
-		wiki.ignore = append(wiki.ignore, expression)
+		lines = append(lines, scanner.Text())
 	}
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("error reading '%s': %v", ignorePath, err)
 	}
 
+	// Create the ignore matcher
+	matcher, err := NewIgnoreMatcher(lines)
+	if err != nil {
+		return fmt.Errorf("error parsing ignore patterns in '%s': %v", ignorePath, err)
+	}
+	wiki.ignoreMatcher = matcher
+
 	return nil
 }
 
 // ignoreFile returns true if the file at path should be ignored.
-func (wiki Wiki) ignoreFile(path string) bool {
-	for _, expr := range wiki.ignore {
-		if expr.MatchString(path) {
-			return true
-		}
+// path should be the full path to the file/directory.
+// isDir indicates whether path is a directory.
+func (wiki Wiki) ignoreFile(path string, isDir bool) bool {
+	if wiki.ignoreMatcher == nil {
+		return false
 	}
-	return false
+
+	// Convert to relative path from ContentDir
+	relPath, err := filepath.Rel(wiki.ContentDir, path)
+	if err != nil {
+		// Can't determine relative path, don't ignore
+		return false
+	}
+
+	return wiki.ignoreMatcher.Matches(relPath, isDir)
 }

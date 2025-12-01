@@ -66,9 +66,19 @@ DESCRIPTION
        will cause a parse error.
 
        Files can be ignored with the file source_dir/ignore.txt. Each line
-       should be one regular expression that specifies file names to ignore.
-       For example, an ignore.txt with the line \.tmp$ will ignore all files
-       with that end in .tmp
+       should be a gitignore-style glob pattern. Patterns work like Git's
+       .gitignore file:
+
+       *.tmp           Ignore all .tmp files
+       .git/           Ignore .git directory
+       backup/         Ignore backup directory (and all contents)
+       /TODO.md        Ignore TODO.md in content root only (anchored)
+       **/*.bak        Ignore .bak files at any depth (recursive)
+       !important.log  Don't ignore this file (negation)
+
+       By default, patterns match filenames at any directory level. Use
+       trailing / to match directories only. Prefix with / to anchor to the
+       content directory root. Use **/ for recursive directory matching.
 
 OPTIONS
        -clean

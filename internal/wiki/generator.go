@@ -235,7 +235,7 @@ func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version st
 		}
 
 		// Ignore this file?
-		if wiki.ignoreFile(contentPath) {
+		if wiki.ignoreFile(contentPath, info.IsDir()) {
 			util.PrintVerbose("Ignoring '%s'", contentPath)
 			return nil
 		}

@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -449,7 +448,7 @@ func TestIgnoreFileSkipsBlankAndCommentLines(t *testing.T) {
 		"\n" +
 		"   # Another comment with leading space\n" +
 		"  \t  \n" +
-		"\\.tmp$\n"
+		"*.tmp\n"
 	if err := os.WriteFile(filepath.Join(sourceDir, "ignore.txt"), []byte(ignoreContents), 0644); err != nil {
 		t.Fatalf("Failed to write ignore.txt: %v", err)
 	}
@@ -754,31 +753,77 @@ func TestMakeSubstitutions(t *testing.T) {
 }
 
 func TestIgnoreFile(t *testing.T) {
+	// Create a temp directory to use as ContentDir
+	tmpDir, err := os.MkdirTemp(tempDir, "ignore-test")
+	if err != nil {
+		t.Fatalf("Error creating test temp directory: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create ignore matcher with gitignore-style patterns
+	patterns := []string{
+		"*.tmp",          // Match all .tmp files
+		".git/",          // Match .git directory
+		"backup/",        // Match backup directory
+		"*.log",          // Match all .log files
+		"/README.md",     // Match README.md in root only
+		"**/*.bak",       // Match .bak files at any depth
+		"!important.log", // Don't ignore this specific file
+	}
+
+	matcher, err := NewIgnoreMatcher(patterns)
+	if err != nil {
+		t.Fatalf("Error creating ignore matcher: %v", err)
+	}
+
 	wiki := Wiki{
-		ignore: []*regexp.Regexp{
-			regexp.MustCompile(`\.tmp$`),
-			regexp.MustCompile(`^\.git`),
-			regexp.MustCompile(`backup`),
-		},
+		ContentDir:    tmpDir,
+		ignoreMatcher: matcher,
 	}
 
 	tests := []struct {
 		path   string
+		isDir  bool
 		ignore bool
+		reason string
 	}{
-		{"file.tmp", true},
-		{"file.md", false},
-		{".gitignore", true},
-		{".git/config", true},
-		{"backup/file.md", true},
-		{"my-backup.md", true},
-		{"normal.md", false},
+		// Basic file patterns
+		{"file.tmp", false, true, "*.tmp matches"},
+		{"file.md", false, false, "no pattern matches"},
+		{"data.log", false, true, "*.log matches"},
+		{"important.log", false, false, "*.log matches but negated by !important.log"},
+
+		// Directory patterns
+		{".git", true, true, ".git/ matches directory"},
+		{".git/config", false, true, ".git/ matches parent directory"},
+		{"backup", true, true, "backup/ matches directory"},
+		{"backup/file.md", false, true, "backup/ matches parent directory"},
+		{"mybackup", true, false, "backup/ doesn't match without slash"},
+		{"my-backup.md", false, false, "backup/ doesn't match substring in filename"},
+
+		// Anchored patterns
+		{"README.md", false, true, "/README.md matches at root"},
+		{"docs/README.md", false, false, "/README.md doesn't match in subdir"},
+
+		// Recursive patterns
+		{"file.bak", false, true, "**/*.bak matches at root level"},
+		{"dir/file.bak", false, true, "**/*.bak matches in subdir"},
+		{"dir/subdir/file.bak", false, true, "**/*.bak matches in deep subdir"},
+
+		// No match
+		{"normal.md", false, false, "no pattern matches"},
+		{"test.txt", false, false, "no pattern matches"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
-			if got := wiki.ignoreFile(tt.path); got != tt.ignore {
-				t.Errorf("ignoreFile(%q) = %v, want %v", tt.path, got, tt.ignore)
+			// Create full path relative to ContentDir
+			fullPath := filepath.Join(tmpDir, tt.path)
+
+			got := wiki.ignoreFile(fullPath, tt.isDir)
+			if got != tt.ignore {
+				t.Errorf("ignoreFile(%q, isDir=%v) = %v, want %v (%s)",
+					tt.path, tt.isDir, got, tt.ignore, tt.reason)
 			}
 		})
 	}

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/stalexan/gomarkwiki/internal/util"
@@ -23,8 +22,8 @@ type Wiki struct {
 	subStrings [][2]string // Substitution strings. Each pair is the string to look for and what to replace it with.
 	subsPath   string      // Path to substitution strings file.
 
-	ignore     []*regexp.Regexp // Which files to ingore
-	ignorePath string           // Path to ignore.txt file.
+	ignoreMatcher *IgnoreMatcher // Gitignore-style pattern matcher
+	ignorePath    string         // Path to ignore.txt file.
 }
 
 // NewWiki constructs a new instance of Wiki.
@@ -77,13 +76,13 @@ func NewWiki(sourceDir, destDir string) (*Wiki, error) {
 	}
 
 	wiki := Wiki{
-		SourceDir:  sourceDir,
-		ContentDir: filepath.Join(sourceDir, "content"),
-		DestDir:    destDir,
-		subStrings: nil,
-		subsPath:   "",
-		ignore:     nil,
-		ignorePath: "",
+		SourceDir:     sourceDir,
+		ContentDir:    filepath.Join(sourceDir, "content"),
+		DestDir:       destDir,
+		subStrings:    nil,
+		subsPath:      "",
+		ignoreMatcher: nil,
+		ignorePath:    "",
 	}
 
 	// Check that the dirs in Wiki exist.

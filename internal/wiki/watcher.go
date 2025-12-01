@@ -37,6 +37,11 @@ const (
 )
 
 // fileSnapshot records the name, modification time, and size for a given file or directory.
+//
+// IMPORTANT: All fields must be value types or immutable types (strings are OK,
+// but no pointers, slices, maps, or channels). This struct is used in the Watcher's
+// snapshot slice, which uses a "copy and release" pattern that shares the underlying
+// array between copies. See the Thread Safety comment on the Watcher struct for details.
 type fileSnapshot struct {
 	name      string
 	timestamp int64 // nanoseconds since Unix epoch

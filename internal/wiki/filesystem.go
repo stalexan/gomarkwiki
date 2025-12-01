@@ -296,12 +296,12 @@ func isDirectoryEmpty(path string) (bool, error) {
 
 // deleteEmptyDirectories deletes any empty directories within path, including
 // directories that have just empty directories.
-func deleteEmptyDirectories(path string) error {
-	return deleteEmptyDirectoriesWithDepth(path, 0)
+func deleteEmptyDirectories(ctx context.Context, path string) error {
+	return deleteEmptyDirectoriesWithDepth(ctx, path, 0)
 }
 
 // deleteEmptyDirectoriesWithDepth is the internal recursive implementation that tracks depth.
-func deleteEmptyDirectoriesWithDepth(path string, depth int) error {
+func deleteEmptyDirectoriesWithDepth(ctx context.Context, path string, depth int) error {
 	// Check recursion depth limit
 	if depth > MaxRecursionDepth {
 		return fmt.Errorf("directory recursion depth exceeded at '%s' (depth %d, max %d)", path, depth, MaxRecursionDepth)
@@ -313,11 +313,18 @@ func deleteEmptyDirectoriesWithDepth(path string, depth int) error {
 	}
 
 	for _, entry := range entries {
+		// Check for cancellation periodically during walk
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		entryPath := filepath.Join(path, entry.Name())
 
 		if entry.IsDir() {
 			// Recursively delete empty directories in subdirectories.
-			err := deleteEmptyDirectoriesWithDepth(entryPath, depth+1)
+			err := deleteEmptyDirectoriesWithDepth(ctx, entryPath, depth+1)
 			if err != nil {
 				return err
 			}
@@ -410,7 +417,7 @@ func (wiki Wiki) cleanDestDir(ctx context.Context, relDestPaths map[string]bool)
 	}
 
 	// Delete empty directories.
-	if err := deleteEmptyDirectories(wiki.DestDir); err != nil {
+	if err := deleteEmptyDirectories(ctx, wiki.DestDir); err != nil {
 		return fmt.Errorf("failed to delete empty directories in '%s': %v", wiki.DestDir, err)
 	}
 

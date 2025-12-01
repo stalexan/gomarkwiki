@@ -334,7 +334,14 @@ func (w *Watcher) waitForEvent(ctx context.Context) (bool, bool, error) {
 	}
 
 	// Get references to channels while holding the lock to prevent
-	// concurrent Close() from causing a race condition
+	// concurrent Close() from causing a race condition.
+	//
+	// Note on concurrent Close() safety: Even if Close() is called after we copy
+	// the channel references but before the select below, this is safe because:
+	// 1. Close() calls w.cancel(), triggering ctx.Done() in the select
+	// 2. Close() closes the fsnotify channels, which we detect via ok == false
+	// 3. Reading from closed channels in Go returns immediately (no panic)
+	// This multi-layered defense ensures graceful shutdown without races.
 	w.mu.Lock()
 	if w.fsWatcher == nil {
 		w.mu.Unlock()

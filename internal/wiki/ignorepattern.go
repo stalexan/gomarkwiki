@@ -47,10 +47,10 @@ func ParseIgnorePattern(line string) (*IgnorePattern, error) {
 		line = strings.TrimSuffix(line, "/")
 	}
 
-	// Check for **/ recursive directory matching
+	// Check for **/ or /** recursive directory matching
 	// Note: ** is only treated as recursive when paired with / (e.g., **/foo, foo/**/bar, foo/**)
 	// Per gitignore semantics, patterns like **.bak are NOT recursive - ** is just a regular glob
-	if strings.Contains(line, "**/") {
+	if strings.Contains(line, "**/") || strings.HasSuffix(line, "/**") {
 		pattern.hasDoubleGlob = true
 	}
 
@@ -133,10 +133,17 @@ func (p *IgnorePattern) Matches(relPath string, isDir bool) bool {
 	return false
 }
 
-// matchRecursive handles patterns with **/ for recursive directory matching.
+// matchRecursive handles patterns with **/ or /** for recursive directory matching.
 func (p *IgnorePattern) matchRecursive(relPath string) bool {
 	pattern := filepath.ToSlash(p.pattern)
 	relPath = filepath.ToSlash(relPath)
+
+	// Handle trailing /** (e.g., "logs/**" matches everything under logs/)
+	if strings.HasSuffix(pattern, "/**") {
+		prefix := strings.TrimSuffix(pattern, "/**")
+		// Match the directory itself or anything inside it
+		return relPath == prefix || strings.HasPrefix(relPath, prefix+"/")
+	}
 
 	// Split on **/ to get prefix and suffix
 	parts := strings.SplitN(pattern, "**/", 2)

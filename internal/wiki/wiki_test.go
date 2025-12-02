@@ -770,6 +770,7 @@ func TestIgnoreFile(t *testing.T) {
 		"/README.md",     // Match README.md in root only
 		"**/*.bak",       // Match .bak files at any depth
 		"!important.log", // Don't ignore this specific file
+		"logs/**",        // Match everything inside logs directory
 	}
 
 	matcher, err := NewIgnoreMatcher(patterns)
@@ -808,10 +809,18 @@ func TestIgnoreFile(t *testing.T) {
 		{"README.md", false, true, "/README.md matches at root"},
 		{"docs/README.md", false, false, "/README.md doesn't match in subdir"},
 
-		// Recursive patterns
+		// Recursive patterns with leading **/
 		{"file.bak", false, true, "**/*.bak matches at root level"},
 		{"dir/file.bak", false, true, "**/*.bak matches in subdir"},
 		{"dir/subdir/file.bak", false, true, "**/*.bak matches in deep subdir"},
+
+		// Recursive patterns with trailing /**
+		{"logs", true, true, "logs/** matches the logs directory itself"},
+		{"logs/debug.txt", false, true, "logs/** matches file in logs directory"},
+		{"logs/2024/jan/access.log", false, true, "logs/** matches deeply nested file"},
+		{"logs/subdir", true, true, "logs/** matches subdirectory"},
+		{"other/logs/file.txt", false, false, "logs/** doesn't match logs in different location"},
+		{"mylogs/file.txt", false, false, "logs/** doesn't match similar directory name"},
 
 		// No match
 		{"normal.md", false, false, "no pattern matches"},

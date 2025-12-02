@@ -696,6 +696,15 @@ func (wiki *Wiki) watch(ctx context.Context, clean bool, version string) error {
 			}
 			// Update watcher's ignore matcher with the new one
 			watcher.UpdateIgnoreMatcher(wiki.ignoreMatcher)
+
+			// Take a fresh snapshot with the new matcher to avoid mismatch
+			// between the stored snapshot (filtered with old rules) and future
+			// snapshots (filtered with new rules)
+			freshSnapshot, err := takeFilesSnapshot(ctx, wiki.ContentDir, wiki.ignoreMatcher)
+			if err != nil {
+				return fmt.Errorf("failed to take fresh snapshot after ignore reload: %v", err)
+			}
+			watcher.UpdateSnapshot(freshSnapshot)
 			// Mod time already updated by UpdateSnapshot above
 		}
 

@@ -236,6 +236,15 @@ func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version st
 			return nil
 		}
 
+		// Ignore this file or directory? (Must check BEFORE isReadableFile to handle directories)
+		if wiki.ignoreFile(contentPath, info.IsDir()) {
+			util.PrintVerbose("Ignoring '%s'", contentPath)
+			if info.IsDir() {
+				return filepath.SkipDir // Don't descend into ignored directories
+			}
+			return nil
+		}
+
 		// Is this file regular and readable?
 		if !isReadableFile(info, contentPath) {
 			// Warn if this is a symlink to a directory
@@ -247,12 +256,6 @@ func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version st
 		fileCount++
 		if fileCount > MaxFilesProcessed {
 			return fmt.Errorf("maximum number of files processed exceeded (%d files, max %d files)", fileCount, MaxFilesProcessed)
-		}
-
-		// Ignore this file?
-		if wiki.ignoreFile(contentPath, info.IsDir()) {
-			util.PrintVerbose("Ignoring '%s'", contentPath)
-			return nil
 		}
 
 		// What's the relative path to this file with respect to the content dir?

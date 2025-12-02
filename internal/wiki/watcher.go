@@ -692,7 +692,9 @@ func (wiki *Wiki) watch(ctx context.Context, clean bool, version string) error {
 		if result.Regen {
 			util.PrintVerbose("Reloading substitution strings from '%s'", wiki.subsPath)
 			if err := wiki.loadSubstitutionStrings(); err != nil {
-				return fmt.Errorf("failed to reload substitution strings file: %v", err)
+				// Log error but continue watching with previous valid configuration
+				util.PrintError(err, "failed to reload substitution strings file, keeping previous configuration")
+				continue
 			}
 			// Mod time already updated by UpdateSnapshot above
 		}
@@ -701,7 +703,9 @@ func (wiki *Wiki) watch(ctx context.Context, clean bool, version string) error {
 		if result.IgnoreChanged {
 			util.PrintVerbose("Reloading ignore expressions from '%s'", wiki.ignorePath)
 			if err := wiki.loadIgnoreExpressions(); err != nil {
-				return fmt.Errorf("failed to reload ignore expressions file: %v", err)
+				// Log error but continue watching with previous valid configuration
+				util.PrintError(err, "failed to reload ignore expressions file, keeping previous configuration")
+				continue
 			}
 			// Update watcher's ignore matcher with the new one
 			watcher.UpdateIgnoreMatcher(wiki.ignoreMatcher)

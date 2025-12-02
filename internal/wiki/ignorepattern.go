@@ -48,6 +48,8 @@ func ParseIgnorePattern(line string) (*IgnorePattern, error) {
 	}
 
 	// Check for **/ recursive directory matching
+	// Note: ** is only treated as recursive when paired with / (e.g., **/foo, foo/**/bar, foo/**)
+	// Per gitignore semantics, patterns like **.bak are NOT recursive - ** is just a regular glob
 	if strings.Contains(line, "**/") {
 		pattern.hasDoubleGlob = true
 	}

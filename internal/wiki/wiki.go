@@ -76,9 +76,9 @@ func NewWiki(sourceDir, destDir string) (*Wiki, error) {
 	}
 
 	wiki := Wiki{
-		SourceDir:     sourceDir,
-		ContentDir:    filepath.Join(sourceDir, "content"),
-		DestDir:       destDir,
+		SourceDir:     absSourceDir,
+		ContentDir:    filepath.Join(absSourceDir, "content"),
+		DestDir:       absDestDir,
 		subStrings:    nil,
 		subsPath:      "",
 		ignoreMatcher: nil,

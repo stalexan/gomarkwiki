@@ -217,10 +217,11 @@ func (w *Watcher) WaitForChange() (*WatchResult, error) {
 	// completing and the next watch cycle starting.
 	w.mu.Lock()
 	snapshot := w.snapshot
+	matcher := w.ignoreMatcher
 	w.mu.Unlock()
 
 	if snapshot != nil {
-		newSnapshot, err := takeFilesSnapshot(ctx, w.contentDir, w.ignoreMatcher)
+		newSnapshot, err := takeFilesSnapshot(ctx, w.contentDir, matcher)
 		if err != nil {
 			return nil, fmt.Errorf("failed to take snapshot for %s: %v", w.contentDir, err)
 		}
@@ -279,7 +280,10 @@ func (w *Watcher) WaitForChange() (*WatchResult, error) {
 
 		// Take fresh snapshot so next cycle has up-to-date state.
 		// Use parent context (w.ctx) since the timeout context already expired.
-		freshSnapshot, err := takeFilesSnapshot(w.ctx, w.contentDir, w.ignoreMatcher)
+		w.mu.Lock()
+		matcher := w.ignoreMatcher
+		w.mu.Unlock()
+		freshSnapshot, err := takeFilesSnapshot(w.ctx, w.contentDir, matcher)
 		if err != nil {
 			// Fall back to old snapshot if we can't take a fresh one
 			util.PrintDebug("Failed to take fresh snapshot on timeout, using old snapshot: %v", err)
@@ -447,6 +451,11 @@ func (w *Watcher) waitForStability(ctx context.Context) ([]fileSnapshot, error) 
 
 	resultChan := make(chan result, 1)
 
+	// Capture ignoreMatcher under lock before starting goroutine
+	w.mu.Lock()
+	matcher := w.ignoreMatcher
+	w.mu.Unlock()
+
 	go func() {
 		defer close(resultChan)
 
@@ -499,7 +508,7 @@ func (w *Watcher) waitForStability(ctx context.Context) ([]fileSnapshot, error) 
 			if snapshot2 != nil {
 				snapshot1 = snapshot2
 			} else {
-				snapshot1, err = takeFilesSnapshot(ctx, w.contentDir, w.ignoreMatcher)
+				snapshot1, err = takeFilesSnapshot(ctx, w.contentDir, matcher)
 				if err != nil {
 					resultChan <- result{err: fmt.Errorf("failed to take files snapshot for %s: %v", w.contentDir, err)}
 					return
@@ -529,7 +538,7 @@ func (w *Watcher) waitForStability(ctx context.Context) ([]fileSnapshot, error) 
 			}
 
 			// Take after snapshot
-			snapshot2, err = takeFilesSnapshot(ctx, w.contentDir, w.ignoreMatcher)
+			snapshot2, err = takeFilesSnapshot(ctx, w.contentDir, matcher)
 			if err != nil {
 				resultChan <- result{err: fmt.Errorf("failed to take files snapshot for %s: %v", w.contentDir, err)}
 				return

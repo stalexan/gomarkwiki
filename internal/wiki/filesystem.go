@@ -217,8 +217,7 @@ func (wiki Wiki) copyFileToDest(ctx context.Context, sourcePath, sourceRelPath s
 			util.PrintVerbose("'%s' was not copied to dest because it no longer exists", sourcePath)
 			return nil
 		} else {
-			util.PrintError(err, "could not open '%s' for copy to dest", sourcePath)
-			return nil
+			return fmt.Errorf("could not open '%s' for copy to dest: %w", sourcePath, err)
 		}
 	}
 	defer source.Close()

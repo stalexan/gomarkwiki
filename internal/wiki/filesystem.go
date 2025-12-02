@@ -106,7 +106,8 @@ func sourceIsOlder(sourceInfo fs.FileInfo, destPath string) bool {
 // This function uses atomic write semantics: it writes to a temporary file first,
 // then renames it to the destination. This ensures that on cancellation or error,
 // the destination file is never left in a partially written state.
-func copyToFile(ctx context.Context, destPath string, source io.Reader) (err error) {
+// The mode parameter specifies the file permissions for the destination file.
+func copyToFile(ctx context.Context, destPath string, source io.Reader, mode os.FileMode) (err error) {
 	// Create temp file in the same directory as the destination.
 	// This ensures the rename will be atomic (same filesystem).
 	destDir := filepath.Dir(destPath)
@@ -162,6 +163,11 @@ func copyToFile(ctx context.Context, destPath string, source io.Reader) (err err
 			}
 			return fmt.Errorf("failed to read source: %v", readErr)
 		}
+	}
+
+	// Set permissions before rename so file is never visible with wrong perms.
+	if err := tempFile.Chmod(mode); err != nil {
+		return fmt.Errorf("failed to set permissions on temp file '%s': %v", tempPath, err)
 	}
 
 	// Atomically rename temp file to destination.
@@ -221,7 +227,7 @@ func (wiki Wiki) copyFileToDest(ctx context.Context, sourcePath, sourceRelPath s
 		}
 	}
 	defer source.Close()
-	if err := copyToFile(ctx, destPath, source); err != nil {
+	if err := copyToFile(ctx, destPath, source, currentInfo.Mode().Perm()); err != nil {
 		return err
 	}
 
@@ -241,7 +247,7 @@ func (wiki *Wiki) copyCssFile(ctx context.Context, file string) error {
 	// Copy file
 	destPath := fmt.Sprintf("%s/%s", wiki.DestDir, file)
 	util.PrintVerbose("Copying '%s' to '%s'", sourcePath, destPath)
-	if err := copyToFile(ctx, destPath, bytes.NewReader(css)); err != nil {
+	if err := copyToFile(ctx, destPath, bytes.NewReader(css), 0644); err != nil {
 		return err
 	}
 

@@ -31,8 +31,15 @@ func warnIfSymlinkToDir(info fs.FileInfo, path string) bool {
 	// Check if the symlink target is a directory
 	targetInfo, err := os.Stat(path)
 	if err != nil {
-		// Can't determine target, not a symlink to a directory
-		return false
+		// Can't determine target - provide helpful warning messages
+		if os.IsNotExist(err) {
+			util.PrintWarning("Skipping broken symlink '%s' (target does not exist)", path)
+		} else if os.IsPermission(err) {
+			util.PrintWarning("Skipping symlink '%s' (permission denied reading target)", path)
+		} else {
+			util.PrintWarning("Skipping symlink '%s' (error reading target: %v)", path, err)
+		}
+		return true // Treat unreadable symlinks as "should skip"
 	}
 
 	if targetInfo.IsDir() {

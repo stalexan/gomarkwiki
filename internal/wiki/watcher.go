@@ -71,7 +71,7 @@ type Watcher struct {
 
 	// Watcher instance (reused across cycles)
 	fsWatcher *fsnotify.Watcher
-	mu        sync.Mutex // Protects fsWatcher, snapshot, subsModTime, and ignoreModTime
+	mu        sync.Mutex // Protects fsWatcher, snapshot, subsModTime, ignoreModTime, and ignoreMatcher
 
 	// Current state
 	snapshot         []fileSnapshot
@@ -623,6 +623,14 @@ func (w *Watcher) UpdateSnapshot(snapshot []fileSnapshot) {
 	w.checkIgnoreFileChanged()
 }
 
+// UpdateIgnoreMatcher updates the ignore matcher used for snapshot comparisons.
+// This should be called when ignore.txt is reloaded.
+func (w *Watcher) UpdateIgnoreMatcher(matcher *IgnoreMatcher) {
+	w.mu.Lock()
+	w.ignoreMatcher = matcher
+	w.mu.Unlock()
+}
+
 // GetSnapshot returns the current snapshot.
 func (w *Watcher) GetSnapshot() []fileSnapshot {
 	w.mu.Lock()
@@ -686,6 +694,8 @@ func (wiki *Wiki) watch(ctx context.Context, clean bool, version string) error {
 			if err := wiki.loadIgnoreExpressions(); err != nil {
 				return fmt.Errorf("failed to reload ignore expressions file: %v", err)
 			}
+			// Update watcher's ignore matcher with the new one
+			watcher.UpdateIgnoreMatcher(wiki.ignoreMatcher)
 			// Mod time already updated by UpdateSnapshot above
 		}
 

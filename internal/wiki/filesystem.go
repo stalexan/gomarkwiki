@@ -101,6 +101,86 @@ func sourceIsOlder(sourceInfo fs.FileInfo, destPath string) bool {
 	return false
 }
 
+// removeConflictingDir removes a directory at path if it exists and conflicts
+// with creating a file at that location. Returns nil if path doesn't exist,
+// is already a file, or was successfully removed.
+func removeConflictingDir(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // Nothing to conflict with
+		}
+		return fmt.Errorf("failed to stat '%s': %v", path, err)
+	}
+
+	if !info.IsDir() {
+		return nil // It's already a file, no conflict
+	}
+
+	// It's a directory where we need to write a file - remove it
+	util.PrintVerbose("Removing directory '%s' that conflicts with file destination", path)
+	if err := os.RemoveAll(path); err != nil {
+		return fmt.Errorf("failed to remove conflicting directory '%s': %v", path, err)
+	}
+	return nil
+}
+
+// ensureDirectoryPath ensures that dirPath can be created as a directory.
+// If any component of the path is an existing file that would block directory
+// creation, that file is removed first.
+func ensureDirectoryPath(dirPath string) error {
+	// First, try the simple case
+	err := os.MkdirAll(dirPath, 0755)
+	if err == nil {
+		return nil
+	}
+
+	// Check if the error indicates a file is blocking the path
+	// On Unix: ENOTDIR; on Windows: similar behavior
+	if !os.IsNotExist(err) && !os.IsPermission(err) {
+		// Likely a path component is a file - find and remove it
+		cleanPath := filepath.Clean(dirPath)
+		currentPath := ""
+		if filepath.IsAbs(cleanPath) {
+			currentPath = string(filepath.Separator)
+		}
+
+		for _, component := range strings.Split(cleanPath, string(filepath.Separator)) {
+			if component == "" {
+				continue
+			}
+			currentPath = filepath.Join(currentPath, component)
+
+			info, statErr := os.Lstat(currentPath)
+			if statErr != nil {
+				if os.IsNotExist(statErr) {
+					// Rest of path doesn't exist, MkdirAll will create it
+					break
+				}
+				// Some other error - return original MkdirAll error
+				return fmt.Errorf("failed to create directory '%s': %v", dirPath, err)
+			}
+
+			if !info.IsDir() {
+				// Found a file blocking the directory path
+				util.PrintVerbose("Removing file '%s' that conflicts with directory path", currentPath)
+				if removeErr := os.Remove(currentPath); removeErr != nil {
+					return fmt.Errorf("failed to remove file '%s' blocking directory '%s': %v", currentPath, dirPath, removeErr)
+				}
+				// Continue checking in case there are more conflicts
+			}
+		}
+
+		// Retry after removing conflicts
+		if retryErr := os.MkdirAll(dirPath, 0755); retryErr != nil {
+			return fmt.Errorf("failed to create directory '%s' after removing conflicts: %v", dirPath, retryErr)
+		}
+		return nil
+	}
+
+	return fmt.Errorf("failed to create directory '%s': %v", dirPath, err)
+}
+
 // copyToFile copies source to the file at destPath, overwriting destPath if it exists.
 // For large files, the copy operation respects context cancellation.
 // This function uses atomic write semantics: it writes to a temporary file first,
@@ -108,6 +188,12 @@ func sourceIsOlder(sourceInfo fs.FileInfo, destPath string) bool {
 // the destination file is never left in a partially written state.
 // The mode parameter specifies the file permissions for the destination file.
 func copyToFile(ctx context.Context, destPath string, source io.Reader, mode os.FileMode) (err error) {
+	// Remove any conflicting directory at the destination path.
+	// This handles the case where source structure changed from directory to file.
+	if err := removeConflictingDir(destPath); err != nil {
+		return err
+	}
+
 	// Create temp file in the same directory as the destination.
 	// This ensures the rename will be atomic (same filesystem).
 	destDir := filepath.Dir(destPath)
@@ -209,10 +295,10 @@ func (wiki Wiki) copyFileToDest(ctx context.Context, sourcePath, sourceRelPath s
 	}
 
 	// Create dest dir if it doesn't exist.
-	// os.MkdirAll is idempotent, so no need to check existence first (avoids TOCTOU).
+	// Use ensureDirectoryPath to handle conflicts where a file exists in the path.
 	destDirPath := filepath.Dir(destPath)
-	if err := os.MkdirAll(destDirPath, 0755); err != nil {
-		return fmt.Errorf("failed to create dest dir '%s': %v", destDirPath, err)
+	if err := ensureDirectoryPath(destDirPath); err != nil {
+		return err
 	}
 
 	// Copy file.

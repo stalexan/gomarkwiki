@@ -171,8 +171,15 @@ func (wiki Wiki) generateHtmlFromMarkdown(mdPath, mdRelPath, relDestPath string,
 	}
 
 	// Create output directory if necessary.
-	if err = os.MkdirAll(outDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create directory '%s': %v", outDir, err)
+	// Use ensureDirectoryPath to handle conflicts where a file exists in the path.
+	if err = ensureDirectoryPath(outDir); err != nil {
+		return "", err
+	}
+
+	// Remove any conflicting directory at the output path.
+	// This handles the case where source structure changed from directory to file.
+	if err = removeConflictingDir(outPath); err != nil {
+		return "", err
 	}
 
 	// Write out the HTML file.

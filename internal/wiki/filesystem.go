@@ -397,15 +397,16 @@ func (wiki Wiki) cleanDestDir(ctx context.Context, relDestPaths map[string]bool)
 			return fmt.Errorf("failed to find relative path of '%s' given '%s': %v", destPath, wiki.DestDir, err)
 		}
 
-		// Defensive check: ensure the relative path doesn't escape the dest dir.
-		// This should never happen with filepath.Walk, but adds a safety layer.
-		if strings.Contains(relDestPath, "..") {
-			util.PrintWarning("Skipping suspicious path with '..': '%s' (from '%s')", relDestPath, destPath)
-			return nil
-		}
-
 		// Clean the path to normalize it (removes redundant separators, etc.)
 		relDestPath = filepath.Clean(relDestPath)
+
+		// Defensive check: ensure the relative path doesn't escape the dest dir.
+		// This should never happen with filepath.Walk, but adds a safety layer.
+		// After Clean(), a path escaping the dest dir would be ".." or start with "../".
+		if relDestPath == ".." || strings.HasPrefix(relDestPath, ".."+string(filepath.Separator)) {
+			util.PrintWarning("Skipping path that escapes dest dir: '%s' (from '%s')", relDestPath, destPath)
+			return nil
+		}
 
 		// Delete this file if it doesn't have a corresponding file in the source dir.
 		if !relDestPaths[relDestPath] {

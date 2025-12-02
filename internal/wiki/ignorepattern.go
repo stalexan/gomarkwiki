@@ -83,17 +83,21 @@ func (p *IgnorePattern) Matches(relPath string, isDir bool) bool {
 
 	// For directory-only patterns like "backup/", match the directory and its contents
 	if p.isDir {
-		// Check if path is the directory itself
-		basename := filepath.Base(relPath)
-		if p.matchPath(basename, pattern) {
-			return true
+		// Check if path is the directory itself - must actually BE a directory
+		if isDir {
+			basename := filepath.Base(relPath)
+			if p.matchPath(basename, pattern) {
+				return true
+			}
 		}
 
 		// Check if path is inside the directory
 		// e.g., pattern "backup/" should match "backup/file.md" or "dir/backup/file.md"
 		parts := strings.Split(relPath, "/")
 		for i := range parts {
-			if p.matchPath(parts[i], pattern) {
+			// Only match if this is not the last component (i.e., something is inside the directory)
+			// The last component case is already handled above
+			if i < len(parts)-1 && p.matchPath(parts[i], pattern) {
 				// Found a matching directory in the path
 				return true
 			}

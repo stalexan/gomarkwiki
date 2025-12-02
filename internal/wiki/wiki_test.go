@@ -797,8 +797,10 @@ func TestIgnoreFile(t *testing.T) {
 		// Directory patterns
 		{".git", true, true, ".git/ matches directory"},
 		{".git/config", false, true, ".git/ matches parent directory"},
+		{".git", false, false, ".git/ should not match file named '.git'"},
 		{"backup", true, true, "backup/ matches directory"},
 		{"backup/file.md", false, true, "backup/ matches parent directory"},
+		{"backup", false, false, "backup/ should not match file named 'backup'"},
 		{"mybackup", true, false, "backup/ doesn't match without slash"},
 		{"my-backup.md", false, false, "backup/ doesn't match substring in filename"},
 

@@ -58,7 +58,9 @@ func checkForStyleDirective(data []byte) (bool, []byte) {
 	trimmed := bytes.TrimLeft(bomStripped, " \t\n\r")
 
 	if bytes.HasPrefix(trimmed, gitHubDirective) {
-		// Directive found: remove the directive and consume the rest of the line
+		// Directive found: remove the directive and consume the rest of the line.
+		// Leading whitespace before the directive is also consumed since it's not
+		// meaningful content.
 		remaining := trimmed[len(gitHubDirective):]
 
 		// Skip to the end of the directive line (consume up to and including newline)
@@ -72,7 +74,9 @@ func checkForStyleDirective(data []byte) (bool, []byte) {
 		return true, remaining
 	}
 
-	// No directive found: return data (BOM stripped if present, otherwise unchanged)
+	// No directive found: return data with BOM stripped but leading whitespace
+	// preserved (since it could be meaningful markdown content like an indented
+	// code block).
 	return false, bomStripped
 }
 

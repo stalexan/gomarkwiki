@@ -292,7 +292,7 @@ func (w *Watcher) WaitForChange() (*WatchResult, error) {
 			w.mu.Unlock()
 			return &WatchResult{
 				Snapshot:      snapshot,
-				Regen:         false,
+				Regen:         true, // Force regeneration on timeout to catch missed events
 				IgnoreChanged: false,
 				Timeout:       true,
 			}, nil
@@ -300,7 +300,7 @@ func (w *Watcher) WaitForChange() (*WatchResult, error) {
 
 		return &WatchResult{
 			Snapshot:      freshSnapshot,
-			Regen:         false,
+			Regen:         true, // Force regeneration on timeout to catch missed events
 			IgnoreChanged: false,
 			Timeout:       true,
 		}, nil

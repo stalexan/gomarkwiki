@@ -103,7 +103,9 @@ func LoadStringPairs(csvPath string) ([][2]string, error) {
 	// Read file incrementally to check field sizes and prevent memory exhaustion
 	reader := csv.NewReader(file)
 	reader.Comma = ','
-	reader.FieldsPerRecord = 2
+	reader.FieldsPerRecord = -1 // Allow variable fields per record for flexible parsing
+	reader.TrimLeadingSpace = true
+	reader.Comment = '#' // Allow comment lines starting with #
 
 	result := make([][2]string, 0)
 	lineNum := 0
@@ -123,6 +125,16 @@ func LoadStringPairs(csvPath string) ([][2]string, error) {
 		}
 
 		lineNum++
+
+		// Skip blank lines
+		if len(record) == 0 || (len(record) == 1 && record[0] == "") {
+			continue
+		}
+
+		// Validate that each non-empty record has exactly 2 fields
+		if len(record) != 2 {
+			return nil, fmt.Errorf("CSV file '%s' has wrong number of fields at line %d: expected 2 fields, got %d (blank lines and # comments are allowed)", csvPath, lineNum, len(record))
+		}
 
 		// Check number of entries limit
 		if len(result) >= MaxSubstitutionStrings {

@@ -11,7 +11,7 @@ type IgnorePattern struct {
 	original      string // Original pattern string for error messages
 	pattern       string // Processed pattern for matching
 	isDir         bool   // Pattern ends with / (matches directories only)
-	isAnchored    bool   // Pattern starts with / (anchored to content root)
+	isAnchored    bool   // Pattern is anchored to content root (starts with / or contains / in middle)
 	isNegation    bool   // Pattern starts with ! (negates previous matches)
 	hasDoubleGlob bool   // Pattern contains **/ (recursive directory matching)
 }
@@ -54,6 +54,14 @@ func ParseIgnorePattern(line string) (*IgnorePattern, error) {
 		pattern.hasDoubleGlob = true
 	}
 
+	// Patterns with / in the middle are implicitly anchored (gitignore semantics)
+	// Per gitignore: "If there is a separator at the beginning or middle of the pattern,
+	// then the pattern is relative to the directory level of the particular .gitignore file"
+	// Note: trailing / was already stripped above, so we check the processed line
+	if strings.Contains(line, "/") && !pattern.hasDoubleGlob {
+		pattern.isAnchored = true
+	}
+
 	pattern.pattern = line
 	return pattern, nil
 }
@@ -74,13 +82,29 @@ func (p *IgnorePattern) Matches(relPath string, isDir bool) bool {
 	// Handle anchored patterns (must match from root)
 	if p.isAnchored {
 		if p.isDir {
-			// Pattern like "/backup/" - match directory or anything inside it
-			if relPath == pattern {
-				return isDir
+			// Pattern like "/backup/" or "logs/temp/" - match directory or anything inside it
+			// Must match from start of path
+			pathParts := strings.Split(relPath, "/")
+			patternParts := strings.Split(pattern, "/")
+
+			// Exact directory match - path has same number of parts as pattern
+			if len(pathParts) == len(patternParts) {
+				if p.matchPathAnchored(relPath, pattern) {
+					return isDir // Only match if it's actually a directory
+				}
+				return false
 			}
-			return strings.HasPrefix(relPath, pattern+"/")
+
+			// Path is inside the directory (more parts than pattern)
+			if len(pathParts) > len(patternParts) {
+				// Check if the directory prefix matches
+				dirPath := strings.Join(pathParts[:len(patternParts)], "/")
+				return p.matchPathAnchored(dirPath, pattern)
+			}
+
+			return false
 		}
-		return p.matchPath(relPath, pattern)
+		return p.matchPathAnchored(relPath, pattern)
 	}
 
 	// For directory-only patterns like "backup/", match the directory and its contents
@@ -180,6 +204,40 @@ func (p *IgnorePattern) matchRecursive(relPath string) bool {
 	}
 
 	return false
+}
+
+// matchPathAnchored matches pattern against path starting from the beginning (for anchored patterns).
+// Unlike matchPath which matches from the end, this ensures the pattern matches from the root.
+func (p *IgnorePattern) matchPathAnchored(path, pattern string) bool {
+	// Handle exact matches first
+	if path == pattern {
+		return true
+	}
+
+	if strings.Contains(pattern, "/") {
+		// For path patterns, match each component from the start
+		pathParts := strings.Split(path, "/")
+		patternParts := strings.Split(pattern, "/")
+
+		// If pattern has more parts than path, can't match
+		if len(patternParts) > len(pathParts) {
+			return false
+		}
+
+		// Match from the start (anchored) - pathOffset is always 0
+		for i, patternPart := range patternParts {
+			pathPart := pathParts[i]
+			matched, err := filepath.Match(patternPart, pathPart)
+			if err != nil || !matched {
+				return false
+			}
+		}
+		return true
+	}
+
+	// Simple pattern (no /), use filepath.Match directly
+	matched, err := filepath.Match(pattern, path)
+	return err == nil && matched
 }
 
 // matchPath performs the actual pattern matching using filepath.Match.

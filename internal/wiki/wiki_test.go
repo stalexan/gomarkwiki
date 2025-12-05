@@ -841,6 +841,99 @@ func TestIgnoreFile(t *testing.T) {
 	}
 }
 
+// TestIgnorePatternPathAnchoring verifies that patterns containing "/" are anchored
+// to the content root per gitignore semantics. According to gitignore documentation:
+// "If there is a separator at the beginning or middle of the pattern, then the pattern
+// is relative to the directory level of the particular .gitignore file itself."
+func TestIgnorePatternPathAnchoring(t *testing.T) {
+	tests := []struct {
+		name    string
+		pattern string
+		path    string
+		isDir   bool
+		want    bool
+		reason  string
+	}{
+		// Pattern with / should be anchored - only match at root
+		{"logs/*.log matches at root", "logs/*.log", "logs/debug.log", false, true,
+			"pattern with / should match at root"},
+		{"logs/*.log does NOT match nested", "logs/*.log", "other/logs/debug.log", false, false,
+			"pattern with / should NOT match at arbitrary depth"},
+		{"logs/*.log does NOT match deep nested", "logs/*.log", "a/b/logs/debug.log", false, false,
+			"pattern with / should NOT match deeply nested"},
+
+		// Multi-component path patterns
+		{"foo/bar/baz.txt matches at root", "foo/bar/baz.txt", "foo/bar/baz.txt", false, true,
+			"multi-component pattern should match at root"},
+		{"foo/bar/baz.txt does NOT match nested", "foo/bar/baz.txt", "other/foo/bar/baz.txt", false, false,
+			"multi-component pattern should NOT match nested"},
+
+		// Pattern with wildcard in directory component
+		{"*/config.json matches at root", "*/config.json", "app/config.json", false, true,
+			"wildcard dir pattern should match at root"},
+		{"*/config.json does NOT match nested", "*/config.json", "other/app/config.json", false, false,
+			"wildcard dir pattern should NOT match nested"},
+
+		// Explicitly anchored patterns (leading /) should still work
+		{"/logs/*.log matches at root", "/logs/*.log", "logs/debug.log", false, true,
+			"explicitly anchored pattern should match at root"},
+		{"/logs/*.log does NOT match nested", "/logs/*.log", "other/logs/debug.log", false, false,
+			"explicitly anchored pattern should NOT match nested"},
+
+		// Patterns WITHOUT / should match at any depth (unchanged behavior)
+		{"*.log matches at root", "*.log", "debug.log", false, true,
+			"simple pattern should match at root"},
+		{"*.log matches nested", "*.log", "logs/debug.log", false, true,
+			"simple pattern should match nested"},
+		{"*.log matches deep nested", "*.log", "a/b/c/debug.log", false, true,
+			"simple pattern should match deeply nested"},
+
+		// Directory patterns with / in them should be anchored
+		{"logs/temp/ matches dir at root", "logs/temp/", "logs/temp", true, true,
+			"dir pattern with / should match at root"},
+		{"logs/temp/ matches file inside at root", "logs/temp/", "logs/temp/file.txt", false, true,
+			"dir pattern with / should match contents at root"},
+		{"logs/temp/ does NOT match nested dir", "logs/temp/", "other/logs/temp", true, false,
+			"dir pattern with / should NOT match nested dir"},
+		{"logs/temp/ does NOT match nested contents", "logs/temp/", "other/logs/temp/file.txt", false, false,
+			"dir pattern with / should NOT match nested contents"},
+
+		// Simple directory patterns WITHOUT / should match at any depth (unchanged)
+		{"temp/ matches at root", "temp/", "temp", true, true,
+			"simple dir pattern should match at root"},
+		{"temp/ matches nested", "temp/", "logs/temp", true, true,
+			"simple dir pattern should match nested"},
+		{"temp/ matches contents nested", "temp/", "logs/temp/file.txt", false, true,
+			"simple dir pattern should match nested contents"},
+
+		// Patterns with **/ should NOT be affected (handled by matchRecursive)
+		{"**/logs/*.log matches at root", "**/logs/*.log", "logs/debug.log", false, true,
+			"recursive pattern should match at root"},
+		{"**/logs/*.log matches nested", "**/logs/*.log", "other/logs/debug.log", false, true,
+			"recursive pattern should match nested"},
+		{"**/logs/*.log matches deep nested", "**/logs/*.log", "a/b/logs/debug.log", false, true,
+			"recursive pattern should match deeply nested"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pattern, err := ParseIgnorePattern(tt.pattern)
+			if err != nil {
+				t.Fatalf("ParseIgnorePattern(%q) error: %v", tt.pattern, err)
+			}
+			if pattern == nil {
+				t.Fatalf("ParseIgnorePattern(%q) returned nil", tt.pattern)
+			}
+
+			got := pattern.Matches(tt.path, tt.isDir)
+			if got != tt.want {
+				t.Errorf("pattern %q.Matches(%q, isDir=%v) = %v, want %v (%s)",
+					tt.pattern, tt.path, tt.isDir, got, tt.want, tt.reason)
+			}
+		})
+	}
+}
+
 func TestLoadSubstitutionStrings(t *testing.T) {
 	tmpDir, err := os.MkdirTemp(tempDir, "subs-test")
 	if err != nil {

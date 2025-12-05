@@ -85,8 +85,8 @@ func NewWiki(sourceDir, destDir string) (*Wiki, error) {
 		ignorePath:    "",
 	}
 
-	// Check that the dirs in Wiki exist and are directories.
-	for _, dir := range []string{wiki.SourceDir, wiki.ContentDir, wiki.DestDir} {
+	// Check that source directories exist and are directories.
+	for _, dir := range []string{wiki.SourceDir, wiki.ContentDir} {
 		info, err := os.Stat(dir)
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("directory '%s' not found", dir)
@@ -95,6 +95,11 @@ func NewWiki(sourceDir, destDir string) (*Wiki, error) {
 		} else if !info.IsDir() {
 			return nil, fmt.Errorf("'%s' is not a directory", dir)
 		}
+	}
+
+	// Create destination directory if it doesn't exist.
+	if err := os.MkdirAll(wiki.DestDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create destination directory '%s': %v", wiki.DestDir, err)
 	}
 
 	// Load substitution strings.

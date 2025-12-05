@@ -185,6 +185,11 @@ func formatErrors(errs []error) error {
 // generateWikis generates the wikis and then optionally watch watches for
 // changes in each wiki to regenerate files on the fly.
 func generateWikis(wikis []*wiki.Wiki, regen, clean, watch bool, version string) error {
+	// Validate that we have wikis to generate
+	if len(wikis) == 0 {
+		return fmt.Errorf("no wikis to generate")
+	}
+
 	// Create context for cancellation
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel() // Ensure cleanup on return

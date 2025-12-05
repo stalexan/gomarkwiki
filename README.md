@@ -1,13 +1,51 @@
 # Gomarkwiki
 
+# Gomarkwiki
+
 Gomarkwiki is a command-line program that converts Markdown to HTML, to create
-static websites from Markdown.  I use it for note taking and personal wikis.
-I was using [ikiwiki](https://ikiwiki.info/), but wanted something faster, and
-that supported more modern syntax and formatting. Gomarkwiki is developed in Go
-using the [Goldmark](https://github.com/yuin/goldmark) parser, which makes it very
-fast, and gives it support for
-[CommonMark](https://en.wikipedia.org/wiki/Markdown#Standardization) as well as
-[GitHub Flavored Markdown](https://github.github.com/gfm) (GFM), such as tables. 
+static websites from Markdown. I use it for note taking and personal wikis.
+I was using [ikiwiki](https://ikiwiki.info/), but wanted something that
+supported more modern syntax and formatting. Gomarkwiki is developed in Go
+using the [Goldmark](https://github.com/yuin/goldmark) parser which gives it
+support for [CommonMark](https://en.wikipedia.org/wiki/Markdown#Standardization) as
+well as [GitHub Flavored Markdown](https://github.github.com/gfm) (GFM), such as
+tables.
+
+**Lightweight by Design:** Gomarkwiki keeps its dependency footprint minimal—just
+3 packages total beyond the Go standard library. The only direct dependencies are
+[Goldmark](https://github.com/yuin/goldmark) for Markdown parsing (which itself
+has zero dependencies) and [fsnotify](https://github.com/fsnotify/fsnotify) for
+file watching in `-watch` mode (which depends only on `golang.org/x/sys`). 
+Fewer dependencies means a smaller attack surface, a simpler build, and
+a codebase that's easier to audit.
+
+## Quick Start
+
+```bash
+# Generate HTML from markdown
+gomarkwiki ~/my-notes ~/public_html/notes
+
+# Watch for changes and regenerate automatically
+gomarkwiki -watch ~/my-notes ~/public_html/notes
+```
+
+Create markdown files in `~/my-notes/content/` and they'll become HTML in
+`~/public_html/notes/`.
+
+## Source Directory Structure
+
+```
+source_dir/
+├── content/                      # Your markdown files go here (required)
+│   ├── index.md
+│   ├── Topics/
+│   │   └── Example.md
+│   ├── local.css                 # Optional: override default styles
+│   ├── github-local.css          # Optional: override GitHub styles
+│   └── favicon.ico               # Optional: site icon
+├── substitution-strings.csv      # Optional: text replacements
+└── ignore.txt                    # Optional: files to skip
+```
 
 ## Usage
 
@@ -22,7 +60,7 @@ SYNOPSIS
 DESCRIPTION
        gomarkwiki generates HTML from Markdown. Each Markdown file found in
        source_dir/content results in a corresponding HTML page generated in
-       dest_dir. 
+       dest_dir.
 
        The source_dir is processed recursively. The directory structure found
        in source_dir is mirrored in dest_dir.
@@ -85,6 +123,9 @@ OPTIONS
               Delete any files in dest_dir that do not have a corresponding
               file in source_dir. By default no files are deleted from dest_dir.
 
+       -debug
+              Print debug messages. Implies -verbose.
+
        -help
               Show help and exit.
 
@@ -133,6 +174,13 @@ remain running to watch for changes and regenerate destination files with:
 gomarkwiki -clean -watch -wikis /etc/gomarkwiki/wikis.csv
 ```
 
+## Symlink Behavior
+
+Gomarkwiki follows symlinks to regular files but does not follow symlinks to
+directories. This prevents infinite loops from circular symlinks and ensures
+predictable behavior. If a symlink to a directory is encountered, a warning
+message is printed and the symlink is skipped.
+
 ## Installation
 
 Gomarkwiki can be installed by either building from source, or downloading
@@ -140,8 +188,8 @@ a pre-built binary.
 
 ### From Source
 
-Gomarkwiki is written in the Go programming language and you need at least Go
-version 1.20. To build gomarkwiki from source, execute the following steps:
+Gomarkwiki is written in the Go programming language and requires Go version
+1.24 or later. To build gomarkwiki from source, execute the following steps:
 
 ```
 $ git clone https://github.com/stalexan/gomarkwiki
@@ -158,7 +206,7 @@ You can download the latest stable release versions of gomarkwiki from the
 These builds are considered stable and releases are made regularly in
 a controlled manner.
 
-There’s both pre-compiled binaries for different platforms as well as the
+There's both pre-compiled binaries for different platforms as well as the
 source code available for download.  Just download and run the one matching
 your system.
 
@@ -174,6 +222,10 @@ uid           Sean Alexandre <sean@alexan.org>
 sub   rsa3072 2023-04-29 [S] [expires: 2024-04-28]
       AAAB32D28EB8110409B4B33CD856897AA7E38BD1
 ```
+
+Note: The signing subkey may have been renewed since this documentation was
+written. Check the [key file](https://www.alexan.org/SeanAlexandre.asc) for
+current expiration dates.
 
 ## Reproducible Builds
 
@@ -191,7 +243,7 @@ with the `--version` option:
 
 ```
 $ gomarkwiki --version
-gomarkwiki v0.2.0 compiled with go1.20.5 on linux/amd64
+gomarkwiki v0.3.1 compiled with go1.24.5 on linux/amd64
 ```
 
 ### With Docker
@@ -200,32 +252,32 @@ To do a reproducible build with Docker, we first create a Docker image by
 running `build-image.sh` in the
 [release-builder](https://github.com/stalexan/gomarkwiki/tree/main/release-builder)
 directory, giving it the version of Go that will be used to do the build. Here
-we create an image that will have Go version 1.20.5:
+we create an image that will have Go version 1.24.5:
 
 ```
-./build-image.sh 1.20.5
+./build-image.sh 1.24.5
 ```
 
 Then to create the release build run `build-release.sh`, in the same directory,
 giving it the location of source to build, where to place the binaries that are
 created, and which commit of gomarkwiki to build. Here we build gomarkwiki
-version `v0.2.0` using the source that's in `~/gomarkwiki`, and place the
+version `v0.3.1` using the source that's in `~/gomarkwiki`, and place the
 binaries that are created in `~/tmp/build-output`:
 
 ```
-./build-release.sh ~/gomarkwiki ~/tmp/build-output v0.2.0
+./build-release.sh ~/gomarkwiki ~/tmp/build-output v0.3.1
 ```
 
 ### Without Docker
 
 A reproducible build can also be done manually, without Docker. Here we perform
-the same steps as done in the build scripts, but for just one executable. 
+the same steps as done in the build scripts, but for just one executable.
 
 First install the version of Go that was used to build Gomarkwiki. For example,
-to install Go 1.20.5:
+to install Go 1.24.5:
 
 ```
-$ GO_URL="https://dl.google.com/go/go1.20.5.linux-amd64.tar.gz"
+$ GO_URL="https://dl.google.com/go/go1.24.5.linux-amd64.tar.gz"
 $ wget -O go.tar.gz.asc "${GO_URL}.asc"
 $ wget -O go.tar.gz "$GO_URL" --progress=dot:giga
 $ gpg --verify go.tar.gz.asc go.tar.gz
@@ -252,19 +304,19 @@ Extract the source to build. Here we extract to `/tmp/build`, but any directory 
 ```
 $ mkdir /tmp/build
 $ cd /tmp/build
-$ curl -L https://github.com/stalexan/gomarkwiki/releases/download/v0.2.0/gomarkwiki-v0.2.0.tar.gz | tar xz --strip-components=1
+$ curl -L https://github.com/stalexan/gomarkwiki/releases/download/v0.3.1/gomarkwiki-v0.3.1.tar.gz | tar xz --strip-components=1
 ```
 
 Build Gomarkwiki:
 
 ```
-$ GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X 'main.version=v0.2.0'" -o gomarkwiki_v0.2.0_linux_amd64 ./cmd/main.go
+$ GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X 'main.version=v0.3.1'" -o gomarkwiki_v0.3.1_linux_amd64 ./cmd/main.go
 ```
 
 Create the zipped version:
 
 ```
-$ bzip2 gomarkwiki_v0.2.0_linux_amd64
+$ bzip2 gomarkwiki_v0.3.1_linux_amd64
 ```
 
 Compare the SHA256 sums. Here we've downloaded the release's SHA256SUMS file to
@@ -272,7 +324,7 @@ the current directory:
 
 ```
 $ sha256sum --ignore-missing --check SHA256SUMS
-gomarkwiki_v0.2.0_linux_amd64.bz2: OK
+gomarkwiki_v0.3.1_linux_amd64.bz2: OK
 ```
 
 The SHA256 sums are the same, and we've done a reproducible build.

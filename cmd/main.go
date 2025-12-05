@@ -169,7 +169,7 @@ func collectAllErrors(errorChan chan error) []error {
 	}
 }
 
-// formatErrors formats multiple errors into a single error message.
+// formatErrors formats multiple errors into a single error, preserving error chains.
 func formatErrors(errs []error) error {
 	if len(errs) == 0 {
 		return nil
@@ -177,12 +177,9 @@ func formatErrors(errs []error) error {
 	if len(errs) == 1 {
 		return errs[0]
 	}
-	// Multiple errors - combine them
-	msg := fmt.Sprintf("multiple errors occurred (%d total):", len(errs))
-	for i, err := range errs {
-		msg += fmt.Sprintf("\n  %d. %v", i+1, err)
-	}
-	return errors.New(msg)
+	// Multiple errors - combine them while preserving unwrapping
+	joined := errors.Join(errs...)
+	return fmt.Errorf("multiple errors occurred (%d total): %w", len(errs), joined)
 }
 
 // generateWikis generates the wikis and then optionally watch watches for

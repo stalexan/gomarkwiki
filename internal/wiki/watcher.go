@@ -689,36 +689,45 @@ func (wiki *Wiki) watch(ctx context.Context, clean bool, version string) error {
 		// Note: UpdateSnapshot also updates subsModTime and ignoreModTime if files changed
 
 		// Reload substitution strings if needed
+		subsReloadFailed := false
 		if result.Regen {
 			util.PrintVerbose("Reloading substitution strings from '%s'", wiki.subsPath)
 			if err := wiki.loadSubstitutionStrings(); err != nil {
-				// Log error but continue watching with previous valid configuration
+				// Log error but continue - still need to check ignore expressions and regenerate
 				util.PrintError(err, "failed to reload substitution strings file, keeping previous configuration")
-				continue
+				subsReloadFailed = true
 			}
 			// Mod time already updated by UpdateSnapshot above
 		}
 
-		// Reload ignore expressions if needed
+		// Reload ignore expressions if needed (independent of substitution strings reload)
+		ignoreReloadFailed := false
 		if result.IgnoreChanged {
 			util.PrintVerbose("Reloading ignore expressions from '%s'", wiki.ignorePath)
 			if err := wiki.loadIgnoreExpressions(); err != nil {
-				// Log error but continue watching with previous valid configuration
+				// Log error but continue - still regenerate with previous config
 				util.PrintError(err, "failed to reload ignore expressions file, keeping previous configuration")
-				continue
-			}
-			// Update watcher's ignore matcher with the new one
-			watcher.UpdateIgnoreMatcher(wiki.ignoreMatcher)
+				ignoreReloadFailed = true
+			} else {
+				// Update watcher's ignore matcher with the new one
+				watcher.UpdateIgnoreMatcher(wiki.ignoreMatcher)
 
-			// Take a fresh snapshot with the new matcher to avoid mismatch
-			// between the stored snapshot (filtered with old rules) and future
-			// snapshots (filtered with new rules)
-			freshSnapshot, err := takeFilesSnapshot(ctx, wiki.ContentDir, wiki.ignoreMatcher)
-			if err != nil {
-				return fmt.Errorf("failed to take fresh snapshot after ignore reload: %v", err)
+				// Take a fresh snapshot with the new matcher to avoid mismatch
+				// between the stored snapshot (filtered with old rules) and future
+				// snapshots (filtered with new rules)
+				freshSnapshot, err := takeFilesSnapshot(ctx, wiki.ContentDir, wiki.ignoreMatcher)
+				if err != nil {
+					return fmt.Errorf("failed to take fresh snapshot after ignore reload: %v", err)
+				}
+				watcher.UpdateSnapshot(freshSnapshot)
+				// Mod time already updated by UpdateSnapshot above
 			}
-			watcher.UpdateSnapshot(freshSnapshot)
-			// Mod time already updated by UpdateSnapshot above
+		}
+
+		// If both config reloads failed, skip generation to avoid confusing state
+		if subsReloadFailed && ignoreReloadFailed {
+			util.PrintWarning("Skipping generation due to config reload failures")
+			continue
 		}
 
 		// Skip generation if this was just a timeout (periodic regen)

@@ -83,7 +83,7 @@ func checkForStyleDirective(data []byte) (bool, []byte) {
 // generateHtmlFromMarkdown generates an HTML file from a markdown file.
 // relDestPath is the relative destination path (e.g., "Foo/Bar.html") that was
 // already computed for collision detection in the caller.
-func (wiki Wiki) generateHtmlFromMarkdown(mdPath, mdRelPath, relDestPath string, regen bool, version string) (string, error) {
+func (wiki Wiki) generateHtmlFromMarkdown(ctx context.Context, mdPath, mdRelPath, relDestPath string, regen bool, version string) (string, error) {
 	// Compute the full output path. For example, if relDestPath is Foo/Bar.html
 	// and the destination directory (destDir) is /wiki-html, the output path is /wiki-html/Foo/Bar.html.
 	outPath := filepath.Join(wiki.DestDir, relDestPath)
@@ -182,8 +182,10 @@ func (wiki Wiki) generateHtmlFromMarkdown(mdPath, mdRelPath, relDestPath string,
 		return "", err
 	}
 
-	// Write out the HTML file.
-	if err := os.WriteFile(outPath, []byte(html.String()), 0644); err != nil {
+	// Write out the HTML file using atomic write semantics.
+	// This ensures the file is either fully written or unchanged, preventing
+	// corruption from crashes or interruptions (same as copyToFile for static files).
+	if err := copyToFile(ctx, outPath, strings.NewReader(html.String()), 0644); err != nil {
 		return "", fmt.Errorf("failed to write HTML file '%s': %v", outPath, err)
 	}
 
@@ -298,7 +300,7 @@ func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version st
 			}
 
 			// Generate HTML from markdown.
-			relDestPath, err = wiki.generateHtmlFromMarkdown(contentPath, relContentPath, relDestPath, regen, version)
+			relDestPath, err = wiki.generateHtmlFromMarkdown(ctx, contentPath, relContentPath, relDestPath, regen, version)
 			if err != nil {
 				util.PrintError(err, "failed to generate HTML for '%s'", contentPath)
 				// Cap error collection to prevent OOM from massive error accumulation

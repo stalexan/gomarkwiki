@@ -131,7 +131,7 @@ func NewWatcher(parentCtx context.Context, contentDir, subsPath, ignorePath, sou
 	var subsExists bool
 	if subsPath != "" {
 		if info, err := os.Stat(subsPath); err == nil {
-			subsModTime = info.ModTime().Unix()
+			subsModTime = info.ModTime().UnixNano()
 			subsExists = true
 			if err := fsWatcher.Add(subsPath); err != nil {
 				fsWatcher.Close()
@@ -148,7 +148,7 @@ func NewWatcher(parentCtx context.Context, contentDir, subsPath, ignorePath, sou
 	var ignoreExists bool
 	if ignorePath != "" {
 		if info, err := os.Stat(ignorePath); err == nil {
-			ignoreModTime = info.ModTime().Unix()
+			ignoreModTime = info.ModTime().UnixNano()
 			ignoreExists = true
 			if err := fsWatcher.Add(ignorePath); err != nil {
 				fsWatcher.Close()
@@ -581,7 +581,7 @@ func (w *Watcher) checkSubsFileChanged() bool {
 		return false
 	}
 
-	currentModTime := info.ModTime().Unix()
+	currentModTime := info.ModTime().UnixNano()
 	w.mu.Lock()
 	changed := !w.subsFileExists || currentModTime != w.subsModTime
 	w.subsFileExists = true
@@ -612,7 +612,7 @@ func (w *Watcher) checkIgnoreFileChanged() bool {
 		return false
 	}
 
-	currentModTime := info.ModTime().Unix()
+	currentModTime := info.ModTime().UnixNano()
 	w.mu.Lock()
 	changed := !w.ignoreFileExists || currentModTime != w.ignoreModTime
 	w.ignoreFileExists = true

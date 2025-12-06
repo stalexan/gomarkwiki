@@ -51,4 +51,4 @@ RUN set -eux; \
 USER build
 WORKDIR /gomarkwiki
 
-CMD bash
+CMD ["bash"]

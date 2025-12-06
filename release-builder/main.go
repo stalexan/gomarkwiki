@@ -14,7 +14,7 @@ import (
 const OUTPUT_DIR = "/output"
 const EXTRACTED_SOURCE_DIR = "/output/source"
 
-var versionRegex = regexp.MustCompile(`^v\d+\.\d+\.\d+`)
+var versionRegex = regexp.MustCompile(`^v\d+\.\d+\.\d+(-.*)?`)
 
 var exeTimestamp time.Time
 
@@ -136,8 +136,14 @@ func preCheckVersionFile(version string) {
 	}
 	versionFromFile := strings.TrimSpace(string(buf))
 
+	// Strip 'v' prefix from git tag version for comparison.
+	versionWithoutPrefix := version
+	if strings.HasPrefix(version, "v") {
+		versionWithoutPrefix = version[1:]
+	}
+
 	// Check that versions match.
-	if version != versionFromFile {
+	if versionWithoutPrefix != versionFromFile {
 		printErrorAndExit("Version from git (%s) does not match version from VERSION file (%s)", version, versionFromFile)
 	}
 }

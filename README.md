@@ -1,7 +1,5 @@
 # Gomarkwiki
 
-# Gomarkwiki
-
 Gomarkwiki is a command-line program that converts Markdown to HTML, to create
 static websites from Markdown. I use it for note taking and personal wikis.
 I was using [ikiwiki](https://ikiwiki.info/), but wanted something that

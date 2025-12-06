@@ -426,7 +426,7 @@
 .markdown-body blockquote {
   margin: 0;
   padding: 0 1em;
-  color: var(--color-fg-muted);
+  color: var(--color-fg-default);
   border-left: .25em solid var(--color-border-default);
 }
 

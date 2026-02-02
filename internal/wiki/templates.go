@@ -27,7 +27,7 @@ const defaultHtmlHeaderTemplateText = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name=generator content="gomarkwiki {{.Version}}">
 <title>{{.Title}}</title>
-<link rel="icon" href="{{.RootRelPath}}favicon.ico" type="image/x-icon" />
+<link rel="icon" href="{{.RootRelPath}}favicon.ico" sizes="any" />
 <link href="{{.RootRelPath}}style.css" rel="stylesheet" />
 <link href="{{.RootRelPath}}local.css" rel="stylesheet" />
 </head>
@@ -43,7 +43,7 @@ const githubHtmlHeaderTemplateText = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name=generator content="gomarkwiki {{.Version}}">
 <title>{{.Title}}</title>
-<link rel="icon" href="{{.RootRelPath}}favicon.ico" type="image/x-icon" />
+<link rel="icon" href="{{.RootRelPath}}favicon.ico" sizes="any" />
 <link href="{{.RootRelPath}}github-style.css" rel="stylesheet" />
 <link href="{{.RootRelPath}}github-local.css" rel="stylesheet" />
 <style>

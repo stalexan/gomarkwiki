@@ -87,6 +87,11 @@ DESCRIPTION
        A favicon can be placed in source_dir/content to give HTML pages
        a default icon. The filename should be favicon.ico.
 
+       Note: Firefox may not display favicons reliably when viewing
+       generated HTML files directly via file:// URLs. This is a Firefox
+       security restriction on local file access, not a gomarkwiki issue.
+       Serving the files through an HTTP server resolves this.
+
        String substitutions can be made using string pairs in the file
        source_dir/substitution-strings.csv. Each line of substitution-strings.csv
        is a comma separated pair of strings, with the string placeholder first,

@@ -215,20 +215,14 @@ your system.
 
 If you like, you can verify the integrity of your downloads by testing the
 SHA-256 checksums listed in SHA256SUMS, and verifying the integrity of the file
-SHA256SUMS with the PGP signature in SHA256SUMS.asc. The PGP signature was
-created using the key ([0x26565B27732B7C75](https://www.alexan.org/SeanAlexandre.asc)):
+SHA256SUMS with the PGP signature in SHA256SUMS.asc.
 
-```
-pub   rsa3072 2023-04-29 [SC] [expires: 2025-04-28]
-      A6951D3EEB4DDAF71434364E26565B27732B7C75
-uid           Sean Alexandre <sean@alexan.org>
-sub   rsa3072 2023-04-29 [S] [expires: 2024-04-28]
-      AAAB32D28EB8110409B4B33CD856897AA7E38BD1
-```
+To verify the signature:
 
-Note: The signing subkey may have been renewed since this documentation was
-written. Check the [key file](https://www.alexan.org/SeanAlexandre.asc) for
-current expiration dates.
+    gpg --keyserver keyserver.ubuntu.com --recv-keys A6951D3EEB4DDAF71434364E26565B27732B7C75
+    gpg --verify SHA256SUMS.asc SHA256SUMS
+
+The public key is also available at https://www.alexan.org/SeanAlexandre.asc
 
 ## Reproducible Builds
 

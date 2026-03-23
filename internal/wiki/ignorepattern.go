@@ -163,8 +163,8 @@ func (p *IgnorePattern) matchRecursive(relPath string) bool {
 	relPath = filepath.ToSlash(relPath)
 
 	// Handle trailing /** (e.g., "logs/**" matches everything under logs/)
-	if strings.HasSuffix(pattern, "/**") {
-		prefix := strings.TrimSuffix(pattern, "/**")
+	if before, ok := strings.CutSuffix(pattern, "/**"); ok {
+		prefix := before
 		// Match the directory itself or anything inside it
 		return relPath == prefix || strings.HasPrefix(relPath, prefix+"/")
 	}

@@ -185,7 +185,7 @@ func TestCollisionDetectionDeterministic(t *testing.T) {
 
 	// Run generation multiple times to verify deterministic behavior
 	expectedWinner := "test.markdown"
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		// Clean output directory between runs
 		if err = os.RemoveAll(outputDir); err != nil {
 			t.Fatalf("Failed to clean output directory: %v", err)
@@ -335,7 +335,7 @@ func TestCollisionDetectionNestedDirs(t *testing.T) {
 	}
 
 	// Run generation multiple times to verify deterministic behavior
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		// Clean output directory between runs
 		if err = os.RemoveAll(outputDir); err != nil {
 			t.Fatalf("Failed to clean output directory: %v", err)

@@ -145,7 +145,7 @@ func ensureDirectoryPath(dirPath string) error {
 			currentPath = string(filepath.Separator)
 		}
 
-		for _, component := range strings.Split(cleanPath, string(filepath.Separator)) {
+		for component := range strings.SplitSeq(cleanPath, string(filepath.Separator)) {
 			if component == "" {
 				continue
 			}

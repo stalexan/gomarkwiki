@@ -519,10 +519,7 @@ func (w *Watcher) waitForStability(ctx context.Context) ([]fileSnapshot, error) 
 			// MAX_CHANGE_WAIT caps the wait time to prevent excessive delays.
 			// For the current values, this kicks in at waitPass >= 7.
 			shift := waitPass - 1
-			waitTime := CHANGE_WAIT * (1 << shift)
-			if waitTime > MAX_CHANGE_WAIT {
-				waitTime = MAX_CHANGE_WAIT
-			}
+			waitTime := min(CHANGE_WAIT*(1<<shift), MAX_CHANGE_WAIT)
 			util.PrintDebug("Waiting %d ms for %s", waitTime.Milliseconds(), w.contentDir)
 
 			// Wait with cancellation support

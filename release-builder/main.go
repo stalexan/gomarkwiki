@@ -22,7 +22,7 @@ func init() {
 	exeTimestamp = time.Date(2023, 05, 20, 0, 0, 0, 0, time.UTC)
 }
 
-func formatMessage(format string, args []interface{}) string {
+func formatMessage(format string, args []any) string {
 	message := fmt.Sprintf(format, args...)
 	if !strings.HasSuffix(message, "\n") {
 		message += "\n"
@@ -30,13 +30,13 @@ func formatMessage(format string, args []interface{}) string {
 	return message
 }
 
-func printMessage(format string, args ...interface{}) {
+func printMessage(format string, args ...any) {
 	message := formatMessage(format, args)
 	message = "\x1b[32m" + message + "\x1b[0m"
 	fmt.Print(message)
 }
 
-func printErrorAndExit(format string, args ...interface{}) {
+func printErrorAndExit(format string, args ...any) {
 	message := formatMessage(format, args)
 	message = "\x1b[31m" + "ERROR: " + message + "\x1b[0m"
 	fmt.Fprint(os.Stderr, message)

@@ -360,14 +360,15 @@ func (wiki Wiki) generateFromContent(ctx context.Context, regen bool, version st
 
 	// Return collected processing errors if any occurred
 	if len(processingErrors) > 0 {
-		errMsg := fmt.Sprintf("failed to process %d file(s)", len(processingErrors))
+		var errMsg strings.Builder
+		errMsg.WriteString(fmt.Sprintf("failed to process %d file(s)", len(processingErrors)))
 		if len(processingErrors) >= MaxProcessingErrors {
-			errMsg += " (error limit reached, additional errors may exist)"
+			errMsg.WriteString(" (error limit reached, additional errors may exist)")
 		}
 		for i, e := range processingErrors {
-			errMsg += fmt.Sprintf("\n  %d. %v", i+1, e)
+			errMsg.WriteString(fmt.Sprintf("\n  %d. %v", i+1, e))
 		}
-		return relDestPaths, fmt.Errorf("%s", errMsg)
+		return relDestPaths, fmt.Errorf("%s", errMsg.String())
 	}
 
 	return relDestPaths, nil

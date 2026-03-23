@@ -101,7 +101,7 @@ func TestLoadStringPairs(t *testing.T) {
 		csvPath := filepath.Join(tmpDir, "big-field.csv")
 		// Create a field larger than MaxCSVFieldSize
 		bigValue := strings.Repeat("x", MaxCSVFieldSize+1)
-		os.WriteFile(csvPath, []byte(fmt.Sprintf("key,%s", bigValue)), 0644)
+		os.WriteFile(csvPath, fmt.Appendf(nil, "key,%s", bigValue), 0644)
 
 		_, err := LoadStringPairs(csvPath)
 		if err == nil {

@@ -24,35 +24,35 @@ const (
 	MaxSubstitutionStrings = 10000 // 10,000 pairs
 )
 
-func formatMessage(format string, args []interface{}) string {
+func formatMessage(format string, args []any) string {
 	return fmt.Sprintf(format, args...)
 }
 
 // PrintMessage prints a message to stdout.
-func PrintMessage(format string, args ...interface{}) {
+func PrintMessage(format string, args ...any) {
 	fmt.Println(formatMessage(format, args))
 }
 
 // PrintVerbose prints a message to stdout if either the Verbose or Debug flag is set.
-func PrintVerbose(format string, args ...interface{}) {
+func PrintVerbose(format string, args ...any) {
 	if Verbose || Debug {
 		fmt.Println(formatMessage(format, args))
 	}
 }
 
 // PrintDebug prints a message to stdout if the Debug flag is set.
-func PrintDebug(format string, args ...interface{}) {
+func PrintDebug(format string, args ...any) {
 	if Debug {
 		fmt.Println(formatMessage(format, args))
 	}
 }
 
 // PrintWarning prints a warning to stderr.
-func PrintWarning(format string, args ...interface{}) {
+func PrintWarning(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "WARNING: %s\n", formatMessage(format, args))
 }
 
-func formatErrorMessage(err error, format string, args []interface{}) string {
+func formatErrorMessage(err error, format string, args []any) string {
 	message := "ERROR"
 	if format != "" {
 		message += fmt.Sprintf(": %s", formatMessage(format, args))
@@ -64,12 +64,12 @@ func formatErrorMessage(err error, format string, args []interface{}) string {
 }
 
 // PrintError prints a error message to stderr.
-func PrintError(err error, format string, args ...interface{}) {
+func PrintError(err error, format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "%s\n", formatErrorMessage(err, format, args))
 }
 
 // PrintFatalError prints a error message to stderr and exits.
-func PrintFatalError(err error, format string, args ...interface{}) {
+func PrintFatalError(err error, format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "%s\n", formatErrorMessage(err, format, args))
 	os.Exit(1)
 }

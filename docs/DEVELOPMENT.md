@@ -189,7 +189,16 @@ The project uses the following main dependencies (see `go.mod`):
 - `github.com/yuin/goldmark` - Markdown parser
 - `github.com/fsnotify/fsnotify` - File system watching (for `-watch` mode)
 
-Dependencies are managed through Go modules and will be automatically downloaded when building.
+Dependencies are managed through Go modules and will be automatically downloaded when
+building.
+
+### Dependency Update Policy
+
+Dependencies are kept up to date and each update is assessed for security impact on
+gomarkwiki. Because the project has a small dependency footprint (3 packages), the
+attack surface is limited. When Go or a dependency ships security fixes, the relevant
+CVEs are checked against the packages and APIs actually used by gomarkwiki, and the
+results are documented in `CHANGELOG.md`.
 
 ## Contributing
 

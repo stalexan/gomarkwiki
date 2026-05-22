@@ -146,6 +146,21 @@ OPTIONS
        -watch
               Remain running and watch for changes to regenerate files on the fly.
 
+       -poll-interval duration
+              Use polling (e.g. -poll-interval=2s) instead of fsnotify for
+              change detection. Requires -watch. The default value 0 keeps
+              fsnotify in use.
+
+              Use this on filesystems where inotify does not see host-side
+              changes, such as macOS-virtualized bind mounts (Apple container
+              CLI, Docker Desktop gRPC FUSE shares), NFS, and SMB. On those
+              shares, -watch by itself silently misses edits because the kernel
+              never fires inotify events. Polling walks the content directory
+              every interval and regenerates when it sees a difference.
+
+              Cost is one directory walk per interval; 2s is a reasonable
+              starting value.
+
        -wikis wikis_file
               Generate wikis specified in CSV file, with one wiki defined per
               line formatted as source_dir,dest_dir.

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/stalexan/gomarkwiki/internal/util"
 )
@@ -24,6 +25,11 @@ type Wiki struct {
 
 	ignoreMatcher *IgnoreMatcher // Gitignore-style pattern matcher
 	ignorePath    string         // Path to ignore.txt file.
+
+	// PollInterval, when non-zero, switches watch mode from fsnotify to a
+	// polling loop. Used to support filesystems where inotify does not see
+	// host-side changes (macOS-virtualized bind mounts, NFS, SMB, etc.).
+	PollInterval time.Duration
 }
 
 // NewWiki constructs a new instance of Wiki.

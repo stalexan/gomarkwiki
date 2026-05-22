@@ -69,7 +69,11 @@ type Watcher struct {
 	sourceDir     string // For error messages
 	ignoreMatcher *IgnoreMatcher
 
-	// Watcher instance (reused across cycles)
+	// pollInterval, when non-zero, switches change detection from fsnotify to a
+	// polling loop. See waitForPollingChange for the polling implementation.
+	pollInterval time.Duration
+
+	// Watcher instance (reused across cycles). Nil when pollInterval > 0.
 	fsWatcher *fsnotify.Watcher
 	mu        sync.Mutex // Protects fsWatcher, snapshot, subsModTime, ignoreModTime, and ignoreMatcher
 
@@ -108,54 +112,74 @@ type WatchResult struct {
 
 // NewWatcher creates a new Watcher instance for the given directories.
 // The parent context is used for cancellation - when it's cancelled, the watcher will stop.
-func NewWatcher(parentCtx context.Context, contentDir, subsPath, ignorePath, sourceDir string, ignoreMatcher *IgnoreMatcher) (*Watcher, error) {
-	fsWatcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create file watcher: %v", err)
+//
+// When pollInterval > 0, the watcher operates in polling mode: it skips fsnotify
+// setup entirely and uses a time.Ticker-driven snapshot comparison loop. This is
+// for filesystems where inotify does not see host-side changes (macOS-virtualized
+// bind mounts, NFS, SMB).
+func NewWatcher(parentCtx context.Context, contentDir, subsPath, ignorePath, sourceDir string, ignoreMatcher *IgnoreMatcher, pollInterval time.Duration) (*Watcher, error) {
+	usePolling := pollInterval > 0
+
+	var fsWatcher *fsnotify.Watcher
+	if !usePolling {
+		var err error
+		fsWatcher, err = fsnotify.NewWatcher()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create file watcher: %v", err)
+		}
+
+		// Set up recursive watching
+		if err := watchDirRecursive(parentCtx, contentDir, fsWatcher); err != nil {
+			fsWatcher.Close()
+			return nil, fmt.Errorf("failed to initialize watcher for %s: %v", contentDir, err)
+		}
+
+		// Watch source directory to monitor config file creation/deletion
+		if err := fsWatcher.Add(sourceDir); err != nil {
+			fsWatcher.Close()
+			return nil, fmt.Errorf("failed to watch source directory '%s': %v", sourceDir, err)
+		}
 	}
 
-	// Set up recursive watching
-	if err := watchDirRecursive(parentCtx, contentDir, fsWatcher); err != nil {
-		fsWatcher.Close()
-		return nil, fmt.Errorf("failed to initialize watcher for %s: %v", contentDir, err)
-	}
-
-	// Watch source directory to monitor config file creation/deletion
-	if err := fsWatcher.Add(sourceDir); err != nil {
-		fsWatcher.Close()
-		return nil, fmt.Errorf("failed to watch source directory '%s': %v", sourceDir, err)
-	}
-
-	// Watch substitution strings file if provided
+	// Stat substitution strings file if provided. We always seed subsModTime
+	// (even in polling mode) because checkSubsFileChanged compares against it.
 	var subsModTime int64
 	var subsExists bool
 	if subsPath != "" {
 		if info, err := os.Stat(subsPath); err == nil {
 			subsModTime = info.ModTime().UnixNano()
 			subsExists = true
-			if err := fsWatcher.Add(subsPath); err != nil {
-				fsWatcher.Close()
-				return nil, fmt.Errorf("failed to watch '%s': %v", subsPath, err)
+			if !usePolling {
+				if err := fsWatcher.Add(subsPath); err != nil {
+					fsWatcher.Close()
+					return nil, fmt.Errorf("failed to watch '%s': %v", subsPath, err)
+				}
 			}
 		} else if !os.IsNotExist(err) {
-			fsWatcher.Close()
+			if fsWatcher != nil {
+				fsWatcher.Close()
+			}
 			return nil, fmt.Errorf("failed to stat '%s': %v", subsPath, err)
 		}
 	}
 
-	// Watch ignore.txt file if provided
+	// Stat ignore.txt file if provided. Same rationale as subsPath above.
 	var ignoreModTime int64
 	var ignoreExists bool
 	if ignorePath != "" {
 		if info, err := os.Stat(ignorePath); err == nil {
 			ignoreModTime = info.ModTime().UnixNano()
 			ignoreExists = true
-			if err := fsWatcher.Add(ignorePath); err != nil {
-				fsWatcher.Close()
-				return nil, fmt.Errorf("failed to watch '%s': %v", ignorePath, err)
+			if !usePolling {
+				if err := fsWatcher.Add(ignorePath); err != nil {
+					fsWatcher.Close()
+					return nil, fmt.Errorf("failed to watch '%s': %v", ignorePath, err)
+				}
 			}
 		} else if !os.IsNotExist(err) {
-			fsWatcher.Close()
+			if fsWatcher != nil {
+				fsWatcher.Close()
+			}
 			return nil, fmt.Errorf("failed to stat '%s': %v", ignorePath, err)
 		}
 	}
@@ -169,6 +193,7 @@ func NewWatcher(parentCtx context.Context, contentDir, subsPath, ignorePath, sou
 		ignorePath:       ignorePath,
 		sourceDir:        sourceDir,
 		ignoreMatcher:    ignoreMatcher,
+		pollInterval:     pollInterval,
 		fsWatcher:        fsWatcher,
 		subsModTime:      subsModTime,
 		ignoreModTime:    ignoreModTime,
@@ -268,8 +293,17 @@ func (w *Watcher) WaitForChange() (*WatchResult, error) {
 		}
 	}
 
-	// Wait for a file system event (or timeout)
-	regen, ignoreChanged, err := w.waitForEvent(ctx)
+	// Wait for a file system event (or timeout). In polling mode this is a
+	// ticker loop that compares snapshots; in fsnotify mode it blocks on the
+	// kernel event channel. Both paths feed the same downstream stability
+	// machinery below.
+	var regen, ignoreChanged bool
+	var err error
+	if w.pollInterval > 0 {
+		regen, ignoreChanged, err = w.waitForPollingChange(ctx)
+	} else {
+		regen, ignoreChanged, err = w.waitForEvent(ctx)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to watch for change event in %s: %v", w.sourceDir, err)
 	}
@@ -414,6 +448,56 @@ func (w *Watcher) waitForEvent(ctx context.Context) (bool, bool, error) {
 
 	case <-ctx.Done():
 		return false, false, nil // Timeout, caller will handle
+	}
+}
+
+// waitForPollingChange is the polling-mode counterpart to waitForEvent. It
+// ticks at w.pollInterval and returns the moment a snapshot comparison shows
+// any content, substitution, or ignore file has changed. Return contract
+// matches waitForEvent: (regenNeeded, ignoreChanged, error), where
+// (false, false, nil) means the context was cancelled or the periodic
+// regeneration timeout fired (caller distinguishes via ctx.Err()).
+func (w *Watcher) waitForPollingChange(ctx context.Context) (bool, bool, error) {
+	ticker := time.NewTicker(w.pollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return false, false, nil
+		case <-ticker.C:
+			w.mu.Lock()
+			baseline := w.snapshot
+			matcher := w.ignoreMatcher
+			w.mu.Unlock()
+
+			newSnapshot, err := takeFilesSnapshot(ctx, w.contentDir, matcher)
+			if err != nil {
+				// If the snapshot failed because the context was cancelled,
+				// treat it as graceful shutdown / timeout rather than an error.
+				if ctx.Err() != nil {
+					return false, false, nil
+				}
+				return false, false, fmt.Errorf("polling snapshot failed for %s: %v", w.contentDir, err)
+			}
+
+			contentChanged := baseline != nil && !filesSnapshotsAreEqual(baseline, newSnapshot)
+			subsChanged := w.checkSubsFileChanged()
+			ignoreChanged := w.checkIgnoreFileChanged()
+
+			if contentChanged || subsChanged || ignoreChanged {
+				if contentChanged {
+					util.PrintDebug("Polling tick detected content change in %s", w.contentDir)
+				}
+				if subsChanged {
+					util.PrintVerbose("Polling tick detected change in substitution strings file '%s'", w.subsPath)
+				}
+				if ignoreChanged {
+					util.PrintVerbose("Polling tick detected change in ignore expressions file '%s'", w.ignorePath)
+				}
+				return subsChanged || ignoreChanged, ignoreChanged, nil
+			}
+		}
 	}
 }
 
@@ -649,7 +733,7 @@ func (wiki *Wiki) watch(ctx context.Context, clean bool, version string) error {
 	util.PrintVerbose("Watching for changes in '%s'", wiki.ContentDir)
 
 	// Create watcher with parent context
-	watcher, err := NewWatcher(ctx, wiki.ContentDir, wiki.subsPath, wiki.ignorePath, wiki.SourceDir, wiki.ignoreMatcher)
+	watcher, err := NewWatcher(ctx, wiki.ContentDir, wiki.subsPath, wiki.ignorePath, wiki.SourceDir, wiki.ignoreMatcher, wiki.PollInterval)
 	if err != nil {
 		return fmt.Errorf("failed to create watcher: %v", err)
 	}

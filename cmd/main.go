@@ -11,6 +11,7 @@ import (
 	"runtime/pprof"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/stalexan/gomarkwiki/internal/util"
 	"github.com/stalexan/gomarkwiki/internal/wiki"
@@ -39,11 +40,12 @@ Examples:
 
 // commandLineArgs stores the arguments specified on the command line.
 type commandLineArgs struct {
-	dirs       [][2]string
-	cpuProfile string
-	regen      bool
-	clean      bool
-	watch      bool
+	dirs         [][2]string
+	cpuProfile   string
+	regen        bool
+	clean        bool
+	watch        bool
+	pollInterval time.Duration
 }
 
 // formatVersion() returns the string displayed by the --version option.
@@ -59,6 +61,7 @@ func parseCommandLine() commandLineArgs {
 	regen := flag.Bool("regen", false, "Regenerate all files regardless of timestamps")
 	clean := flag.Bool("clean", false, "Delete any files in dest_dir that do not have a corresponding file in source_dir")
 	watch := flag.Bool("watch", false, "Remain running and watch for changes to regenerate files on the fly")
+	pollInterval := flag.Duration("poll-interval", 0, "Use polling (every duration, e.g. 2s) instead of fsnotify; required for inotify-blind filesystems (macOS-virtualized mounts, NFS, SMB). Requires -watch.")
 	var wikisCsvPath string
 	flag.StringVar(&wikisCsvPath, "wikis", "", "Generate wikis specified in CSV file, with one wiki defined per line formatted as source_dir,dest_dir")
 	flag.BoolVar(&util.Verbose, "verbose", false, "Print status messages")
@@ -87,6 +90,15 @@ func parseCommandLine() commandLineArgs {
 		os.Exit(0)
 	}
 
+	// Validate -poll-interval. Negative is always invalid; positive without
+	// -watch is a misconfiguration we surface rather than silently ignore.
+	if *pollInterval < 0 {
+		util.PrintFatalError(nil, "-poll-interval must not be negative (got %s)", *pollInterval)
+	}
+	if *pollInterval > 0 && !*watch {
+		util.PrintFatalError(nil, "-poll-interval requires -watch")
+	}
+
 	// What directories are specified?
 	dirs := make([][2]string, 0)
 	if wikisCsvPath != "" {
@@ -104,11 +116,12 @@ func parseCommandLine() commandLineArgs {
 	}
 
 	return commandLineArgs{
-		dirs:       dirs,
-		cpuProfile: *cpuProfile,
-		regen:      *regen,
-		clean:      *clean,
-		watch:      *watch,
+		dirs:         dirs,
+		cpuProfile:   *cpuProfile,
+		regen:        *regen,
+		clean:        *clean,
+		watch:        *watch,
+		pollInterval: *pollInterval,
 	}
 }
 
@@ -142,6 +155,7 @@ func main() {
 		if theWiki, err = wiki.NewWiki(dirPair[0], dirPair[1]); err != nil {
 			util.PrintFatalError(err, "")
 		}
+		theWiki.PollInterval = args.pollInterval
 		wikis = append(wikis, theWiki)
 	}
 

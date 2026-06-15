@@ -34,19 +34,19 @@ staticcheck:
 
 .PHONY: check-updates
 check-updates: ## Check for dependency updates
-	@echo "Checking for dependency updates..."
+	@echo "Checking for dependency updates (minor releases only)..."
 	@$(GO) list -u -m all 2>/dev/null | grep -E '\[.*\]' || echo "All dependencies are up to date."
 
 .PHONY: update-deps
 update-deps: ## Update all dependencies to their latest versions
-	@echo "Updating dependencies..."
+	@echo "Updating dependencies (minor releases only)..."
 	$(GO) get -u ./...
 	$(GO) mod tidy
 	@echo "Dependencies updated. Run 'make test' to verify everything still works."
 
 .PHONY: update-deps-patch
 update-deps-patch: ## Update dependencies to latest patch versions only
-	@echo "Updating dependencies (patch versions only)..."
+	@echo "Updating dependencies (minor releases only and just patch versions (less aggressive)..."
 	$(GO) get -u=patch ./...
 	$(GO) mod tidy
 	@echo "Dependencies updated. Run 'make test' to verify everything still works."

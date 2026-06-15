@@ -11,6 +11,13 @@ build:
 	mkdir -p $(BUILD_DIR)
 	$(GO) build -ldflags "-X 'main.version=$(VERSION)'" -o $(BUILD_DIR)/$(BINARY) ./cmd/main.go
 
+.PHONY: build-linux-amd64
+build-linux-amd64: ## Cross-compile for Ubuntu/Linux x86_64
+	mkdir -p $(BUILD_DIR)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+		$(GO) build -ldflags "-X 'main.version=$(VERSION)'" \
+		-o $(BUILD_DIR)/$(BINARY)-linux-amd64 ./cmd/main.go
+
 .PHONY: clean
 clean:
 	rm -rf $(BUILD_DIR)
@@ -57,6 +64,7 @@ help: ## Print this help message
 	@echo ""
 	@echo "Available targets:"
 	@echo "  build             Build the binary"
+	@echo "  build-linux-amd64 Cross-compile for Ubuntu/Linux x86_64"
 	@echo "  clean             Clean the build directory"
 	@echo "  fmt               Format the code"
 	@echo "  staticcheck       Check the code using staticcheck"

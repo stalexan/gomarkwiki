@@ -2,6 +2,41 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.3] - 2026-07-18
+
+Dependency updates. No user-facing changes; upgrading is optional.
+
+### Changed
+
+- Updated goldmark from v1.8.2 to v1.8.4
+- Updated golang.org/x/sys from v0.46.0 to v0.47.0
+
+### Security Assessment
+
+goldmark is the Markdown-to-HTML renderer, so its changes affect gomarkwiki's
+output path directly. Two relevant fixes landed between v1.8.2 and v1.8.4:
+
+| Fix | Version | Relevance to gomarkwiki |
+|-----|---------|-------------------------|
+| Guard against index-out-of-range panic on malformed Markdown ([#556]) | v1.8.3 | Hardens the parser against a crash on adversarial input |
+| Disable SVG in `data:image` URLs | v1.8.4 | XSS hardening for the generated HTML |
+
+golang.org/x/sys v0.47.0 contains platform and bug fixes only, with no security
+fixes. It is a transitive dependency of fsnotify, used only in `-watch` mode.
+
+No CVEs were assigned to either update.
+
+[#556]: https://github.com/yuin/goldmark/issues/556
+
+## [1.0.2] - 2026-06-15
+
+Dependency updates. No user-facing changes; upgrading is optional.
+
+### Changed
+
+- Upgraded Go from 1.26.3 to 1.26.4
+- Updated golang.org/x/sys from v0.44.0 to v0.46.0 (indirect)
+
 ## [1.0.1] - 2026-03-23
 
 Dependency updates. No user-facing changes; upgrading is optional.

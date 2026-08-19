@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.5] - 2026-08-19
+
+Build tooling update. No user-facing changes; upgrading is optional.
+
+### Changed
+
+- Bumped the `go` directive in go.mod from 1.26.5 to 1.26.7 to match the
+  latest stable Go toolchain.
+
 ## [1.0.4] - 2026-08-19
 
 Dependency update. No user-facing changes; upgrading is optional.

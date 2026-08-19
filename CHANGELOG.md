@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.4] - 2026-08-19
+
+Dependency update. No user-facing changes; upgrading is optional.
+
+### Changed
+
+- Updated goldmark from v1.8.4 to v1.8.5
+
+### Security Assessment
+
+goldmark is the Markdown-to-HTML renderer, so its changes affect gomarkwiki's
+output path directly. v1.8.5 fixes an index-out-of-range panic ([#568]) when
+parsing a blockquote/fence line with a tab before a backtick and no trailing
+newline, caused by mixing column-width and byte-length measurements when
+detecting blank lines. This hardens the parser against a crash on adversarial
+input.
+
+No CVEs were assigned to this update.
+
+[#568]: https://github.com/yuin/goldmark/issues/568
+
 ## [1.0.3] - 2026-07-18
 
 Dependency updates. No user-facing changes; upgrading is optional.

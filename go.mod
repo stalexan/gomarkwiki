@@ -1,6 +1,6 @@
 module github.com/stalexan/gomarkwiki
 
-go 1.26.5
+go 1.26.7
 
 require github.com/yuin/goldmark v1.8.5
 
